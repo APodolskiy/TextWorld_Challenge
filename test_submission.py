@@ -314,5 +314,6 @@ def main():
     else:
         _dockerize(args)
 
-if __name__ == "__main__":
+
+if _name_ == "__main__":
     main()
