@@ -72,14 +72,12 @@ def train(game_files):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Train an agent.")
-    #parser.add_argument("games", metavar="game", nargs="+",
-    #                   help="List of games to use for training.")
     parser.add_argument("games", metavar="game", type=str,
                         help="path to the folder with games")
     args = parser.parse_args()
 
     train_dir = Path(args.games)
-    #games = args.games
+
     games = [str(f) for f in train_dir.iterdir() if f.is_file() and f.suffix == '.ulx']
 
     train(games)
