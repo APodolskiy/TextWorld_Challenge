@@ -278,7 +278,11 @@ class CustomAgent:
             if len(d) == 0:
                 description_token_list[i] = ["end"]  # if empty description, insert word "end"
         description_id_list = [_words_to_ids(tokens, self.word2id) for tokens in description_token_list]
-        description_id_list = [_d + _i + _q + _f + _pa for (_d, _i, _q, _f, _pa) in zip(description_id_list, inventory_id_list, quest_id_list, feedback_id_list, prev_action_id_list)]
+        description_id_list = [_d + _i + _q + _f + _pa for (_d, _i, _q, _f, _pa) in zip(description_id_list,
+                                                                                        inventory_id_list,
+                                                                                        quest_id_list,
+                                                                                        feedback_id_list,
+                                                                                        prev_action_id_list)]
 
         input_description = pad_sequences(description_id_list, maxlen=max_len(description_id_list)).astype('int32')
         input_description = to_pt(input_description, self.use_cuda)
@@ -311,7 +315,7 @@ class CustomAgent:
         if adj_2 == self.EOS_id:
             res = res + " " + prep + " " + self.word_vocab[noun_2]
         else:
-            res =  res + " " + prep + " " + self.word_vocab[adj_2] + " " + self.word_vocab[noun_2]
+            res = res + " " + prep + " " + self.word_vocab[adj_2] + " " + self.word_vocab[noun_2]
         return res
 
     def get_chosen_strings(self, chosen_indices):
@@ -607,7 +611,7 @@ class CustomAgent:
             if avg_score > self.best_avg_score_so_far:
                 self.best_avg_score_so_far = avg_score
 
-                save_to = self.model_checkpoint_path + '/' + self.experiment_tag + "_episode_" + str(self.current_episode) + ".pt"
+                save_to = self.model_checkpoint_path + '/' + self.experiment_tag + "_episode_" + ".pt"
                 torch.save(self.model.state_dict(), save_to)
                 print("========= saved checkpoint =========")
 
