@@ -4,7 +4,7 @@ general:
   use_cuda: True  # disable this when running on machine without cuda
 
   # replay memory
-  replay_memory_capacity: 500000  # adjust this depending on your RAM size
+  replay_memory_capacity: 100000 #500000  # adjust this depending on your RAM size
   replay_memory_priority_fraction: 0.25
   update_per_k_game_steps: 4
   replay_batch_size: 32
@@ -22,7 +22,7 @@ checkpoint:
   save_frequency: 100
 
 training:
-  batch_size: 16
+  batch_size: 2
   nb_epochs: 500
   max_nb_steps_per_episode: 50  # after this many steps, a game is terminated
   optimizer:

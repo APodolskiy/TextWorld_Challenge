@@ -490,7 +490,8 @@ class CustomAgent:
         greater_than_epsilon = to_pt(greater_than_epsilon, self.use_cuda, type='float')
         less_than_epsilon, greater_than_epsilon = less_than_epsilon.long(), greater_than_epsilon.long()
 
-        chosen_indices = [less_than_epsilon * idx_random + greater_than_epsilon * idx_maxq for idx_random, idx_maxq in zip(word_indices_random, word_indices_maxq)]
+        chosen_indices = [less_than_epsilon * idx_random + greater_than_epsilon * idx_maxq
+                          for idx_random, idx_maxq in zip(word_indices_random, word_indices_maxq)]
         chosen_indices = [item.detach() for item in chosen_indices]
         chosen_strings = self.get_chosen_strings(chosen_indices)
         self.prev_actions = chosen_strings
@@ -501,7 +502,13 @@ class CustomAgent:
                 if mask_np[b] == 0:
                     continue
                 is_prior = rewards_np[b] > 0.0
-                self.replay_memory.push(is_prior, self.cache_description_id_list[b], [item[b] for item in self.cache_chosen_indices], rewards[b], mask[b], dones[b], description_id_list[b], [item[b] for item in self.word_masks_np])
+                self.replay_memory.push(is_prior, self.cache_description_id_list[b],
+                                        [item[b] for item in self.cache_chosen_indices],
+                                        rewards[b],
+                                        mask[b],
+                                        dones[b],
+                                        description_id_list[b],
+                                        [item[b] for item in self.word_masks_np])
 
         # cache new info in current game step into caches
         self.cache_description_id_list = description_id_list
@@ -614,6 +621,7 @@ class CustomAgent:
                 save_to = self.model_checkpoint_path + '/' + self.experiment_tag + "_episode_" + ".pt"
                 torch.save(self.model.state_dict(), save_to)
                 print("========= saved checkpoint =========")
+                print(f"Path to checkpoint {save_to}")
 
         self.current_episode += 1
         # annealing
