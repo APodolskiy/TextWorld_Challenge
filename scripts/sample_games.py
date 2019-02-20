@@ -1,15 +1,21 @@
 """Folder with training games is too big, for debugging purposes it's useful to sample just some of them"""
+from collections import defaultdict
+import logging
 from pathlib import Path
 from pprint import pprint
 import re
 import shutil
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 import fire
 import numpy
 
 
-FIND_NUMBER = re.compile(r'[0-9]')
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
+
+FIND_NUMBER = re.compile(r'[0-9]$')
 
 
 def sample_random_games(files_dir: str, num_games: int) -> List[Path]:
@@ -26,15 +32,27 @@ def sample_random_games(files_dir: str, num_games: int) -> List[Path]:
 
 
 def sample_games_by_level(files_dir: str, level: int, max_games: Optional[int] = None) -> List[Path]:
-    files = sorted(Path(files_dir).iterdir())
-    ulx_files = [file for file in files if file.suffix == '.ulx']
-    pass
+    assert level > 0
+    assert max_games > 0
+
+    files = defaultdict(list)
+    for file in Path(files_dir).iterdir():
+        if count_skills(file.stem) <= level:
+            files[file.stem].append(file)
+    file_groups = list(files.values())
+    return [file for file_group in file_groups[:max_games] for file in file_group]
 
 
-def acquire_skills(game_name: str):
+def count_skills(game_name):
+    skills = acquire_skills(game_name)
+    return sum(skills.values())
+
+
+def acquire_skills(game_name: str) -> Dict[str, int]:
     skill_field = game_name.split("-")[2]
     skills = skill_field.split("+")
-    return [(skill, get_skill_count(skill)) for skill in skills]
+    # TODO: all skills are differnt in the naming of files?
+    return {truncate_skill(skill): get_skill_count(skill) for skill in skills}
 
 
 def get_skill_count(skill: str) -> int:
@@ -42,6 +60,13 @@ def get_skill_count(skill: str) -> int:
     if len(num) == 0:
         return 1
     return int(num[0])
+
+
+def truncate_skill(skill: str) -> str:
+    num = FIND_NUMBER.findall(skill)
+    if len(num) == 0:
+        return skill
+    return skill[:-1]
 
 
 def main(files_dir="games/train", num_games=10, saving_dir="games/train_sample/"):
