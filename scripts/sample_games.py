@@ -19,6 +19,15 @@ FIND_NUMBER = re.compile(r'[0-9]+$')
 
 
 def sample_random_games(files_dir: str, num_games: int) -> List[Path]:
+    """
+    Sample random games from the specified folder
+    Args:
+        files_dir: path to the directory with games
+        num_games: number of games to sample
+
+    Returns: list of `pathlib.Path` related to the sampled games
+
+    """
     numpy.random.seed(0)
     files = sorted(Path(files_dir).iterdir())
     # each game is defined by .json, .z8, .ulx files
@@ -100,22 +109,46 @@ def truncate_skill(skill: str) -> str:
     return skill[:-len(num[0])]
 
 
-def sample_random(files_dir="games/train", num_games=10, saving_dir="games/train_sample/"):
-    saving_dir = Path(saving_dir)
-    saving_dir.mkdir(parents=True, exist_ok=True)
-    res = sample_random_games(files_dir, num_games)
-    for gamefile in res:
-        shutil.copy(str(gamefile), str(saving_dir))
-    pprint(res)
+class SampleGames:
+    def __init__(self,
+                 files_dir: str = "games/train",
+                 saving_dir: str = "games/train_sample/",
+                 force: bool = False):
+        self.files_dir = files_dir
+        self.saving_dir = saving_dir
+        self.force = force
+        self._create_saving_dir()
 
+    def _create_saving_dir(self):
+        saving_dir = Path(self.saving_dir)
+        if saving_dir.exists() and self.force:
+            shutil.rmtree(str(saving_dir))
+        saving_dir.mkdir(parents=True, exist_ok=False)
 
-def sample_by_level(files_dir="games/train"):
-    pass
+    def _copy_games(self, games: List[Path]):
+        for gamefile in games:
+            shutil.copy(str(gamefile), str(self.saving_dir))
+        pprint(games)
 
+    def random(self, num_games: int = 10):
+        games = sample_random_games(self.files_dir, num_games)
+        self._copy_games(games)
 
-def sample_by_skill():
-    pass
+    def level(self, level_max: int, level_min: int = 0, max_games: Optional[int] = None):
+        games = sample_games_by_level(files_dir=self.files_dir,
+                                      level_max=level_max,
+                                      level_min=level_min,
+                                      max_games=max_games)
+        self._copy_games(games)
+
+    def skill(self, skill: str, skill_cnt_max: int, skill_cnt_min: int = 0, max_games: Optional[int] = None):
+        games = sample_games_by_skill(files_dir=self.files_dir,
+                                      skill=skill,
+                                      skill_cnt_max=skill_cnt_max,
+                                      skill_cnt_min=skill_cnt_min,
+                                      max_games=max_games)
+        self._copy_games(games)
 
 
 if __name__ == '__main__':
-    fire.Fire()
+    fire.Fire(SampleGames)
