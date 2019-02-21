@@ -5,17 +5,16 @@ from scripts.sample_games import get_skill_count, acquire_skills, count_skills
 
 @pytest.fixture()
 def game_name():
-    return 'tw-play-recipe2+go1+open1+cook3-12-XJKDASADA'
+    return 'tw-play-recipe2+go+open+cook3-12-XJKDASADA'
 
 
 @pytest.fixture()
 def skills(game_name):
-    return game_name.split('-')[2]
+    return game_name.split('-')[2].split('+')
 
 
 def test_get_skill_count(skills):
-    skills = ['goal3', 'goal', 'goal32', 'recipe2', 'rec2ipe3', 'co2ok']
-    true_cnt = [3, 1, 2, 2, 3, 1]
+    true_cnt = [2, 1, 1, 3]
     skill_cnt = [get_skill_count(skill) for skill in skills]
     assert true_cnt == skill_cnt
 
