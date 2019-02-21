@@ -31,15 +31,25 @@ def sample_random_games(files_dir: str, num_games: int) -> List[Path]:
     return sampled_files
 
 
-def sample_games_by_level(files_dir: str, level: int, max_games: Optional[int] = None) -> List[Path]:
-    assert level > 0
-    assert max_games > 0
+def sample_games_by_level(files_dir: str,
+                          level_max: int,
+                          level_min: int = 0,
+                          max_games: Optional[int] = None) -> List[Path]:
+    assert level_max > 0
+    assert level_min > 0
+    assert (max_games is None) or (max_games > 0)
+
+    if level_max < level_min:
+        raise ValueError("Max level should be greater or equal to min level!")
 
     files = defaultdict(list)
+    games_cnt = 0
     for file in Path(files_dir).iterdir():
-        if count_skills(file.stem) <= level:
+        if level_min <= count_skills(file.stem) <= level_max:
             files[file.stem].append(file)
+            games_cnt += 1
     file_groups = list(files.values())
+    max_games = max_games or games_cnt
     return [file for file_group in file_groups[:max_games] for file in file_group]
 
 
@@ -79,4 +89,9 @@ def main(files_dir="games/train", num_games=10, saving_dir="games/train_sample/"
 
 
 if __name__ == '__main__':
-    fire.Fire(main)
+    prev = 0
+    for level in range(1, 21):
+        num_games = len(sample_games_by_level("games/train", level_max=level)) // 3
+        print(f"{level}: {num_games - prev}")
+        prev = num_games
+    #fire.Fire(main)
