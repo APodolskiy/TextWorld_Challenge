@@ -7,5 +7,5 @@ class EpsScheduler:
         self.gamma = config.pop("gamma", 0.95)
         self.step_size = config.pop("step_size", 1)
 
-    def get_eps(self, current_step):
+    def eps(self, current_step):
         return self.init_eps * self.gamma ** (current_step // self.step_size)
