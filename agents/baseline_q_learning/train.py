@@ -36,23 +36,25 @@ def train(game_files):
             obs, infos = env.reset()
             agent.train()
 
-            dones, steps, scores = [False], [], []
+            done, steps, scores = False, [], []
+            step = 0
 
-            while not all(dones):
+            while not done:
                 # Increase step counts.
-                steps = [step + int(not done) for step, done in zip(steps, dones)]
-                commands = agent.act(obs, scores, dones, infos)
-                obs, scores, dones, infos = env.step(commands)
+                # steps = [step + int(not done) for step, done in zip(steps, dones)]
+                step = step + int(not done)
+                command = agent.act(obs, scores, done, infos)
+                obs, score, done, infos = env.step(command)
 
             # Let the agent knows the game is done.
-            agent.act(obs, scores, dones, infos)
+            agent.act(obs, scores, done, infos)
 
-            stats["scores"].extend(scores)
-            stats["steps"].extend(steps)
+            stats["scores"].append(scores)
+            stats["steps"].append(step)
 
-        score = sum(stats["scores"]) / agent.batch_size
-        steps = sum(stats["steps"]) / agent.batch_size
-        print("Epoch: {:3d} | {:2.1f} pts | {:4.1f} steps".format(epoch_no, score, steps))
+        score = sum(stats["scores"])
+        steps = sum(stats["steps"])
+        print(f"Epoch: {epoch_no:3d} | {score:2.1f} pts | {steps:4.1f} steps")
 
 
 if __name__ == '__main__':
