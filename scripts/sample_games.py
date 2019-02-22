@@ -5,7 +5,7 @@ from pathlib import Path
 from pprint import pprint
 import re
 import shutil
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Callable, Any
 
 import fire
 import numpy
@@ -59,15 +59,20 @@ def sample_games_by_level(files_dir: str,
     if level_max < level_min:
         raise ValueError("Max level should be greater or equal to min level!")
 
-    files = defaultdict(list)
-    games_cnt = 0
-    for game_file in Path(files_dir).iterdir():
-        if level_min <= count_skills(game_file.stem) <= level_max:
-            files[game_file.stem].append(game_file)
-            games_cnt += 1
-    file_groups = list(files.values())
-    max_games = max_games or games_cnt
-    return [game_file for file_group in file_groups[:max_games] for game_file in file_group]
+    class LevelCmp:
+        def __init__(self, level_max: int, level_min: int):
+            self.level_max = level_max
+            self.level_min = level_min
+
+        def __call__(self, game_name: str) -> bool:
+            level = count_skills(game_name)
+            if self.level_min <= level <= self.level_max:
+                return True
+            return False
+
+    return filter_games(files_dir=files_dir,
+                        func_cmp=LevelCmp(level_max, level_min),
+                        max_games=max_games)
 
 
 def sample_games_by_skill(files_dir: str,
@@ -88,14 +93,36 @@ def sample_games_by_skill(files_dir: str,
     assert skill_cnt_min >= 0
     assert (max_games is None) or (max_games > 0)
 
+    if skill_cnt_max < skill_cnt_min:
+        raise ValueError("Max skill level should be greater or equal to min skill level!")
+
+    class SkillLevelCmp:
+        def __init__(self, skill: str, skill_cnt_max: int, skill_cnt_min: int):
+            self.skill = skill
+            self.skill_cnt_max = skill_cnt_max
+            self.skill_cnt_min = skill_cnt_min
+
+        def __call__(self, game_name: str) -> bool:
+            skill_level = count_skill(game_name, self.skill)
+            if self.skill_cnt_min <= skill_level <= self.skill_cnt_max:
+                return True
+            return False
+
+    return filter_games(files_dir=files_dir,
+                        func_cmp=SkillLevelCmp(skill, skill_cnt_max, skill_cnt_min),
+                        max_games=max_games)
+
+
+def filter_games(files_dir: str, func_cmp: Callable[[str], bool], max_games: int):
+    numpy.random.seed(0)
     files = defaultdict(list)
     games_cnt = 0
     for game_file in Path(files_dir).iterdir():
-        skills = acquire_skills(game_file.stem)
-        if skill in skills and skill_cnt_min <= skills[skill] <= skill_cnt_max:
+        if func_cmp(game_file.stem):
             files[game_file.stem].append(game_file)
             games_cnt += 1
-    file_groups = list(files.values())
+    file_groups = numpy.array(list(files.values()))
+    numpy.random.shuffle(file_groups)
     max_games = max_games or games_cnt
     return [game_file for file_group in file_groups[:max_games] for game_file in file_group]
 
@@ -119,6 +146,19 @@ def acquire_skills(game_name: str) -> Dict[str, int]:
     skill_field = game_name.split("-")[2]
     skills = skill_field.split("+")
     return {truncate_skill(skill): get_skill_count(skill) for skill in skills}
+
+
+def count_skill(game_name: str, skill: str) -> int:
+    """
+    Count skill level of the game.
+    :param game_name: game name
+    :param skill: skill name
+    :return: skill level
+    """
+    skills = acquire_skills(game_name)
+    if skill in skills:
+        return skills[skill]
+    return 0
 
 
 def get_skill_count(skill: str) -> int:
