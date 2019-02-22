@@ -1,3 +1,4 @@
+import random
 from typing import List, Dict, Any, Optional
 
 import torch
@@ -7,6 +8,7 @@ from torch.nn import Module
 import torch.nn as nn
 from torch.optim.lr_scheduler import StepLR
 
+from agents.utils.eps_scheduler import EpsScheduler
 from agents.utils.params import Params
 
 
@@ -46,8 +48,10 @@ class BaseQlearningAgent:
         self.tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
 
         self.qnet = QNet(config.pop("network"))
+        self.eps_scheduler = EpsScheduler(config.pop("epsilon"))
 
-        self.eps_scheduler = StepLR
+        self.current_step = 0
+
 
     def train(self) -> None:
         """ Tell the agent it is in training mode. """
@@ -150,7 +154,7 @@ class BaseQlearningAgent:
 
         # [You can insert code here.]
 
-    def act(self, obs: str, scores: List[int], dones: List[bool], infos: Dict[str, List[Any]]) -> Optional[List[str]]:
+    def act(self, obs: str, scores: List[int], dones: List[bool], infos: Dict[str, List[Any]]):
         """
         Acts upon the current list of observations.
 
@@ -178,14 +182,20 @@ class BaseQlearningAgent:
         #
         # if not self._epsiode_has_started:
         #     self._start_episode(obs, infos)
-
+        # TODO: no batching currecntly
         admissible_commands = infos["admissible_commands"]
 
-        state_repr = self.embed_observation(obs, infos)
-        actions_repr = self.embed_actions(admissible_commands)
-
-        q_values = self.qnet(state_repr, torch.stack(actions_repr))
-        raise NotImplementedError()
+        if random.random() < self.eps_scheduler.eps(self.current_step):
+            command = random.choice(admissible_commands)
+        else:
+            state_repr = self.embed_observation(obs, infos)
+            actions_repr = self.embed_actions(admissible_commands)
+            q_values = self.qnet(state_repr, torch.cat(actions_repr, dim=0))
+            max_q_val, idx_max_q_val = q_values.max()
+            command = admissible_commands[idx_max_q_val]
+        self.current_step += 1
+        return command
+        # raise NotImplementedError()
         # [Insert your code here to obtain the commands.]
         # return ["wait"] * len(obs)  # No-op
 
