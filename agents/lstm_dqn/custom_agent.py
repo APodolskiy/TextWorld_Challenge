@@ -17,9 +17,6 @@ from agents.utils.replay import PrioritizedReplayMemory, Transition
 from agents.utils.cache import HistoryScoreCache
 
 
-import time
-
-
 class CustomAgent:
     def __init__(self):
         """
@@ -466,7 +463,6 @@ class CustomAgent:
             games are done, in which case `CustomAgent.finish()` is called
             instead.
         """
-        s_time = time.time()
         if not self._epsiode_has_started:
             self._start_episode(obs, infos)
 
@@ -517,11 +513,9 @@ class CustomAgent:
         # cache new info in current game step into caches
         self.cache_description_id_list = description_id_list
         self.cache_chosen_indices = chosen_indices
-        print(f"Time to act {time.time() - s_time}")
 
         # update neural model by replaying snapshots in replay memory
         if self.current_step > 0 and self.current_step % self.update_per_k_game_steps == 0:
-            s_time = time.time()
             loss = self.update()
             if loss is not None:
                 # Backpropagate
@@ -530,7 +524,6 @@ class CustomAgent:
                 # `clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.
                 torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.clip_grad_norm)
                 self.optimizer.step()  # apply gradients
-            print(f"Time to update {time.time() - s_time}")
         self.current_step += 1
 
         if all(dones):
