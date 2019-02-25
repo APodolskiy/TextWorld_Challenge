@@ -50,10 +50,7 @@ def train(game_files):
             "scores": [],
             "steps": [],
         }
-        import time
-        e_time = time.time()
         for game_no in tqdm(range(len(game_files))):
-            g_time = time.time()
             obs, infos = env.reset()
             agent.train()
 
@@ -64,21 +61,17 @@ def train(game_files):
                 # Increase step counts.
                 steps = [step + int(not done) for step, done in zip(steps, dones)]
                 commands = agent.act(obs, scores, dones, infos)
-                s_time = time.time()
                 obs, scores, dones, infos = env.step(commands)
-                print(f"Time to step {time.time() - s_time}")
 
             # Let the agent knows the game is done.
             agent.act(obs, scores, dones, infos)
 
             stats["scores"].extend(scores)
             stats["steps"].extend(steps)
-            print(f"Time for the game: {time.time() - g_time} steps: {steps}")
 
         score = sum(stats["scores"]) / agent.batch_size
         steps = sum(stats["steps"]) / agent.batch_size
         print("Epoch: {:3d} | {:2.1f} pts | {:4.1f} steps".format(epoch_no, score, steps))
-        print(f"Epoch time: {time.time() - e_time}")
 
 
 if __name__ == '__main__':
