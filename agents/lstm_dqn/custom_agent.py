@@ -197,8 +197,7 @@ class CustomAgent:
         request_infos = EnvInfos()
         request_infos.description = True
         request_infos.inventory = True
-        request_infos.entities = True
-        request_infos.verbs = True
+        request_infos.entities = True; request_infos.verbs = True
         request_infos.extras = ["recipe"]
         return request_infos
 
