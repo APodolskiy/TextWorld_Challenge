@@ -9,6 +9,7 @@ Transition = namedtuple('Transition', ('observation_id_list', 'word_indices',
                                        'next_word_masks'))
 
 
+# TODO: move this experience replay to lstm DQN cause it is constrained on it.
 class PrioritizedReplayMemory(object):
 
     def __init__(self, capacity=100000, priority_fraction=0.0):
