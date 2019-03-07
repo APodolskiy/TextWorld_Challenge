@@ -44,9 +44,10 @@ class CustomAgent:
         if random.random() < self.eps_scheduler(self.act_steps):
             return random.choice(admissible_commands)
         else:
-            pass
+            input_description, description_id_list = self.get_game_state_info(obs, infos)
+            # TODO: implement act metod for simple DQN model.
 
-    def get_game_state_info(self, obs: Dict[str], infos: [Dict[str, List[Any]]]):
+    def get_game_state_info(self, obs: List[str], infos: [Dict[str, List[Any]]]):
         inventory_token_list = [preproc(item, tokenizer=self.nlp) for item in infos["inventory"]]
         inventory_id_list = [_words_to_ids(tokens, self.word2id) for tokens in inventory_token_list]
 
@@ -66,6 +67,7 @@ class CustomAgent:
                          i + [self.SEP_id] + r
                          for (d, i, r) in zip(description_id_list, inventory_id_list, recipe_id_list)]
         input_description = pad_sequences(state_id_list, maxlen=max_len(state_id_list)).astype('int32')
+        # TODO: re-write for Pytorch 1 style device assignment
         input_description = to_pt(input_description)
         return input_description, description_id_list
 
