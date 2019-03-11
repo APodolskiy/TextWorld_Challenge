@@ -1,50 +1,81 @@
-from collections import namedtuple
+from overrides import overrides
 import random
+from typing import NamedTuple, List
 
 
-# a snapshot of state to be stored in replay memory
-Transition = namedtuple('Transition', ('observation_id_list', 'word_indices',
-                                       'reward', 'mask', 'done',
-                                       'next_observation_id_list',
-                                       'next_word_masks'))
+class AbstractReplayMemory:
+    def __init__(self, capacity: int = 100000):
+        self.capacity = capacity
+        self.buffer = []
+        self.position = 0
+
+    def push(self, transition: NamedTuple):
+        """
+        Add transition to the replay memory.
+        :param transition: transition performed by an agent, regularly: state, action, reward, next_state.
+        """
+        raise NotImplementedError("Push method should be implemented!")
+
+    def sample(self, batch_size: int) -> List[NamedTuple]:
+        raise NotImplementedError("Sample method should be implemented!")
+
+    def __len__(self) -> int:
+        return len(self.buffer)
 
 
-# TODO: move this experience replay to lstm DQN cause it is constrained on it.
-class PrioritizedReplayMemory(object):
+class ExperienceReplay(AbstractReplayMemory):
+    """
+    Simple Experience Replay memory.
+    """
+    def __init__(self, capacity: int = 100000):
+        super(ExperienceReplay, self).__init__(capacity=capacity)
 
-    def __init__(self, capacity=100000, priority_fraction=0.0):
-        # prioritized replay memory
-        self.priority_fraction = priority_fraction
-        self.alpha_capacity = int(capacity * priority_fraction)
-        self.beta_capacity = capacity - self.alpha_capacity
-        self.alpha_memory, self.beta_memory = [], []
-        self.alpha_position, self.beta_position = 0, 0
+    @overrides
+    def push(self, transition: NamedTuple):
+        """
+        Add transition to the replay memory.
+        :param transition: transition performed by an agent, regularly: state, action, reward, next_state.
+        """
+        if len(self.buffer) < self.capacity:
+            self.buffer.append(None)
+        self.buffer[self.position] = transition
+        self.position = (self.position + 1) % self.capacity
 
-    def push(self, is_prior=False, *args):
-        """Saves a transition."""
-        if self.priority_fraction == 0.0:
-            is_prior = False
-        if is_prior:
-            if len(self.alpha_memory) < self.alpha_capacity:
-                self.alpha_memory.append(None)
-            self.alpha_memory[self.alpha_position] = Transition(*args)
-            self.alpha_position = (self.alpha_position + 1) % self.alpha_capacity
-        else:
-            if len(self.beta_memory) < self.beta_capacity:
-                self.beta_memory.append(None)
-            self.beta_memory[self.beta_position] = Transition(*args)
-            self.beta_position = (self.beta_position + 1) % self.beta_capacity
-
-    def sample(self, batch_size):
-        if self.priority_fraction == 0.0:
-            from_beta = min(batch_size, len(self.beta_memory))
-            res = random.sample(self.beta_memory, from_beta)
-        else:
-            from_alpha = min(int(self.priority_fraction * batch_size), len(self.alpha_memory))
-            from_beta = min(batch_size - int(self.priority_fraction * batch_size), len(self.beta_memory))
-            res = random.sample(self.alpha_memory, from_alpha) + random.sample(self.beta_memory, from_beta)
-        random.shuffle(res)
-        return res
+    @overrides
+    def sample(self, batch_size: int) -> List[NamedTuple]:
+        if len(self.buffer) < batch_size:
+            raise ValueError(f"Can't sample batch of size {batch_size} from the buffer!\n"
+                             f"There are only {len(self.buffer)} elements in the buffer.")
+        return random.sample(self.buffer, batch_size)
 
     def __len__(self):
-        return len(self.alpha_memory) + len(self.beta_memory)
+        return len(self.buffer)
+
+
+class PrioritizedReplayMemory(AbstractReplayMemory):
+    """
+    Experience Replay memory that stores transitions with priorities and samples
+    elements according to these priorities.
+    """
+    def __init__(self, capacity: int = 100000):
+        super(PrioritizedReplayMemory, self).__init__(capacity=capacity)
+
+
+    @overrides
+    def push(self, transition: NamedTuple):
+        pass
+
+    @overrides
+    def sample(self, batch_size: int) -> List[NamedTuple]:
+        pass
+
+
+class BinaryPrioritizeReplayMemory(AbstractReplayMemory):
+    def __init__(self, capacity: int = 100000):
+        super(BinaryPrioritizeReplayMemory, self).__init__(capacity=capacity)
+
+    def push(self, transition: NamedTuple):
+        pass
+
+    def sample(self, batch_size: int) -> List[NamedTuple]:
+        pass
