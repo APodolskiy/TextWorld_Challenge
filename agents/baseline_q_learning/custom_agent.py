@@ -44,14 +44,15 @@ class BaseQlearningAgent:
         self.device = config.pop("device")
         self.max_steps_per_episode = config.pop("max_steps_per_episode")
 
-        self.bert = BertModel.from_pretrained('bert-base-uncased').to(self.device).eval()
-        self.tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+        self.bert = (
+            BertModel.from_pretrained("bert-base-uncased").to(self.device).eval()
+        )
+        self.tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
 
         self.qnet = QNet(config.pop("network"))
         self.eps_scheduler = EpsScheduler(config.pop("epsilon"))
 
         self.current_step = 0
-
 
     def train(self) -> None:
         """ Tell the agent it is in training mode. """
@@ -115,10 +116,12 @@ class BaseQlearningAgent:
                 extras=["recipe"],                          # Handicap 4
                 admissible_commands,                        # Handicap 5
         """
-        return EnvInfos(description=True,
-                        inventory=True,
-                        extras=["recipe"],
-                        admissible_commands=True)
+        return EnvInfos(
+            description=True,
+            inventory=True,
+            extras=["recipe"],
+            admissible_commands=True,
+        )
 
     def _init(self) -> None:
         """ Initialize the agent. """
@@ -141,7 +144,9 @@ class BaseQlearningAgent:
 
         # [You can insert code here.]
 
-    def _end_episode(self, obs: List[str], scores: List[int], infos: Dict[str, List[Any]]) -> None:
+    def _end_episode(
+        self, obs: List[str], scores: List[int], infos: Dict[str, List[Any]]
+    ) -> None:
         """
         Tell the agent the episode has terminated.
 
@@ -154,7 +159,13 @@ class BaseQlearningAgent:
 
         # [You can insert code here.]
 
-    def act(self, obs: str, scores: List[int], dones: List[bool], infos: Dict[str, List[Any]]):
+    def act(
+        self,
+        obs: str,
+        scores: List[int],
+        dones: List[bool],
+        infos: Dict[str, List[Any]],
+    ):
         """
         Acts upon the current list of observations.
 
@@ -201,16 +212,24 @@ class BaseQlearningAgent:
 
     def embed_observation(self, obs: str, infos: Dict):
         # TODO: change sep to smth other?
-        state_description = \
-            "[CLS] " + "[SEP]".join([obs, infos["description"], infos["inventory"]]) + " [SEP]"
+        state_description = (
+            "[CLS] "
+            + "[SEP]".join([obs, infos["description"], infos["inventory"]])
+            + " [SEP]"
+        )
 
         tokenized_state_description = self.tokenizer.tokenize(state_description)
-        cleaned_tokenized_state_decription = [token for token in tokenized_state_description
-                                    if token not in {"$", "|", "", "_", "\\", "/"}]
+        cleaned_tokenized_state_decription = [
+            token
+            for token in tokenized_state_description
+            if token not in {"$", "|", "", "_", "\\", "/"}
+        ]
         indexed_state_description = self.tokenizer.convert_tokens_to_ids(
-            cleaned_tokenized_state_decription)
-        indexed_state_description = torch.tensor([indexed_state_description],
-                                                 device=self.device)
+            cleaned_tokenized_state_decription
+        )
+        indexed_state_description = torch.tensor(
+            [indexed_state_description], device=self.device
+        )
         # TODO: fine-tune?
         with torch.no_grad():
             _, state_repr = self.bert(indexed_state_description)
@@ -223,7 +242,8 @@ class BaseQlearningAgent:
                 tokenzed_action = self.tokenizer.tokenize(f"[CLS] {action} [SEP]")
                 action_indices = torch.tensor(
                     [self.tokenizer.convert_tokens_to_ids(tokenzed_action)],
-                    device=self.device)
+                    device=self.device,
+                )
                 _, action_embedding = self.bert(action_indices)
                 embedded_actions.append(action_embedding)
         return embedded_actions
