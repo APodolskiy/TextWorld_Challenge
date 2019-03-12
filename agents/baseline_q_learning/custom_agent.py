@@ -1,5 +1,6 @@
 import random
 from collections import namedtuple
+from multiprocessing import Queue
 from typing import List, Dict, Any, Optional
 
 import torch
@@ -24,10 +25,7 @@ class BaseQlearningAgent:
     """
 
     def __init__(
-        self,
-        config: Params,
-        net,
-        experience_replay_buffer: Optional[AbstractReplayMemory] = None,
+        self, config: Params, net, experience_replay_buffer: Optional[Queue] = None
     ) -> None:
         self._initialized = False
         self._episode_has_started = False
@@ -166,25 +164,24 @@ class BaseQlearningAgent:
     def update_experience_replay_buffer(self, actions, observations, rewards, dones):
         if self.prev_actions:
             # Formatting ot Boga
-            transitions = [
-                Transition(
-                    previous_state=previous_state,
-                    action=action,
-                    reward=reward,
-                    done=done,
-                    next_state=next_state,
-                )
-                for previous_state, action, reward, done, next_state, already_done in zip(
-                    self.prev_states,
-                    self.prev_actions,
-                    rewards,
-                    dones,
-                    observations,
-                    self.already_dones,
-                )
-                if not already_done
-            ]
-            self.experience_replay_buffer.push_batch(transitions)
+            for previous_state, action, reward, done, next_state, already_done in zip(
+                self.prev_states,
+                self.prev_actions,
+                rewards,
+                dones,
+                observations,
+                self.already_dones,
+            ):
+                if not already_done:
+                    self.experience_replay_buffer.put(
+                        Transition(
+                            previous_state=previous_state,
+                            action=action,
+                            reward=reward,
+                            done=done,
+                            next_state=next_state,
+                        )
+                    )
 
         self.prev_actions = actions
         self.prev_states = observations
