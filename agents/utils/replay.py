@@ -4,6 +4,9 @@ from typing import NamedTuple, List
 
 
 class AbstractReplayMemory:
+    """
+    Abstract class that describes basic API for Replay Memory
+    """
     def __init__(self, capacity: int = 100000):
         self.capacity = capacity
 
@@ -21,9 +24,6 @@ class AbstractReplayMemory:
         :return: sampled batch of transitions
         """
         raise NotImplementedError("Sample method should be implemented!")
-
-    def __len__(self) -> int:
-        return len(self.buffer)
 
 
 class ExperienceReplay(AbstractReplayMemory):
@@ -56,16 +56,21 @@ class ExperienceReplay(AbstractReplayMemory):
     def __len__(self):
         return len(self.buffer)
 
-
+# TODO: create sum tree data structure
+# TODO: continue creation of Prioritized Experience replay
 class PrioritizedReplayMemory(AbstractReplayMemory):
     """
     Experience Replay memory that stores transitions with priorities and samples
     elements according to these priorities.
     """
-    def __init__(self, capacity: int = 100000, alpha: float = 0.6):
+    def __init__(self, capacity: int = 100000, alpha: float = 0.6,
+                 beta_init: float = 0.4, beta_anneal_steps: int = 10000):
         super(PrioritizedReplayMemory, self).__init__(capacity=capacity)
         self.alpha_smoothing = alpha
         self.buffer = []
+        self.beta_init = beta_init
+        self.beta_anneal_steps = beta_anneal_steps
+        self.beta_steps = 0
 
     @overrides
     def push(self, transition: NamedTuple):
@@ -74,6 +79,11 @@ class PrioritizedReplayMemory(AbstractReplayMemory):
     @overrides
     def sample(self, batch_size: int) -> List[NamedTuple]:
         pass
+
+    def _beta_by_step(self, step: int):
+        beta_ang = (1 - self.beta_init) / self.beta_anneal_steps
+        beta = beta_ang * step + self.beta_init
+        return min(beta, 1.0)
 
     def __len__(self):
         return len(self.buffer)
