@@ -191,7 +191,7 @@ class BaseQlearningAgent:
         #     self._end_episode(obs, scores, infos)
         #     return  # Nothing to return.
         #
-        # if not self._epsiode_has_started:
+        # if not self._episode_has_started:
         #     self._start_episode(obs, infos)
         # TODO: no batching currecntly
         admissible_commands = infos["admissible_commands"]
