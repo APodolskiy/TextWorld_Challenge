@@ -2,15 +2,17 @@ from collections import namedtuple
 from multiprocessing.managers import BaseManager, NamespaceProxy
 import os
 import random
+import torch
 import torch.multiprocessing as mp
 import time
 from typing import NamedTuple
+
 
 Transition = namedtuple('Transition', ['val1', 'val2'])
 
 
 class ReplayMemory:
-    def __init__(self, capacity: int = 100000):
+    def __init__(self, capacity: int = 100_000):
         self.capacity = capacity
         self.buffer = []
         self.position = 0
@@ -65,7 +67,7 @@ class Actor(mp.Process):
 
     def run(self):
         for _ in range(10):
-            self.shared_memory.put([time.time(), os.getpid()])
+            self.shared_memory.put([os.getpid(), torch.rand(1)])
             time.sleep(0.5)
 
 
