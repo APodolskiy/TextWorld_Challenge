@@ -166,34 +166,36 @@ class BaseQlearningAgent:
         self.update_experience_replay_buffer(actions, observations, rewards, dones)
         return actions
 
-    def embed_observation(self, obs: str, infos: Dict):
-        # TODO: change sep to smth other?
-        state_description = (
-            "[CLS] "
-            + "[SEP]".join([obs, infos["description"], infos["inventory"]])
-            + " [SEP]"
-        )
+    def embed_observations(self, observations: str, infos: Dict):
+        obs_idxs = []
+        for obs, descr, inventory in zip(
+            observations, infos["description"], infos["inventory"]
+        ):
+            # TODO: change sep to smth other?
+            state_description = (
+                "[CLS] " + "[SEP]".join([obs, descr, inventory]) + " [SEP]"
+            )
 
-        tokenized_state_description = self.tokenizer.tokenize(state_description)
-        cleaned_tokenized_state_decription = [
-            token
-            for token in tokenized_state_description
-            if token not in {"$", "|", "", "_", "\\", "/"}
-        ]
-        indexed_state_description = self.tokenizer.convert_tokens_to_ids(
-            cleaned_tokenized_state_decription
-        )
-        indexed_state_description = torch.tensor(
-            [indexed_state_description], device=self.device
-        )
+            tokenized_state_description = self.tokenizer.tokenize(state_description)
+            cleaned_tokenized_state_decription = [
+                token
+                for token in tokenized_state_description
+                if token not in {"$", "|", "", "_", "\\", "/"}
+            ]
+            indexed_state_description = self.tokenizer.convert_tokens_to_ids(
+                cleaned_tokenized_state_decription
+            )
+            indexed_state_description = torch.tensor(
+                indexed_state_description, device=self.device
+            )
+            obs_idxs.append(indexed_state_description)
         # TODO: fine-tune?
         with torch.no_grad():
-            _, state_repr = self.bert(indexed_state_description)
+            padded_idxs = pad_sequence(obs_idxs, batch_first=True)
+            _, state_repr = self.bert(padded_idxs)
         return state_repr
 
     def embed_actions(self, actions):
-
-        pad_sequence
 
         embedded_actions = []
         with torch.no_grad():
@@ -207,8 +209,11 @@ class BaseQlearningAgent:
                 embedded_actions.append(action_embedding)
         return embedded_actions
 
-    def get_q_values(self, observations, admissible_commands):
-        embedded_actions = self.embed_actions(admissible_commands)
+    def get_q_values(self, observations, batch_admissible_commands, infos):
+        embedded_actions = [
+            self.embed_actions(commands) for commands in batch_admissible_commands
+        ]
+        embedded_obs = self.embed_observations(observations, infos=infos)
 
     def update_experience_replay_buffer(self, actions, observations, rewards, dones):
         if self.prev_actions:
