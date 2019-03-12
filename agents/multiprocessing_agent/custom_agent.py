@@ -20,13 +20,94 @@ Transition = namedtuple(
 )
 
 
+class QNet(Module):
+    def __init__(self, config: Params, device="cuda"):
+        super().__init__()
+
+        self.bert = BertModel.from_pretrained("bert-base-uncased").eval()
+        self.tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
+
+        self.hidden_size = config.get("hidden_size")
+        self.embedding_size = config.get("embedding_size")
+
+        self.obs_to_hidden = nn.Linear(self.embedding_size, self.hidden_size)
+        self.actions_to_hidden = nn.Linear(self.embedding_size, self.hidden_size)
+        self.hidden_to_scores = nn.Linear(self.hidden_size, 1)
+
+        self.lrelu = nn.LeakyReLU(0.2)
+
+        self.device = device
+
+    def forward(self, observations, actions, infos):
+
+        embedded_observations = self.embed_observations(observations, infos)
+        embedded_actions = self.embed_actions(actions)
+
+        q_values = []
+
+        for obs, actions in zip(embedded_observations, embedded_actions):
+            obs = self.obs_to_hidden(obs)
+            actions = self.actions_to_hidden(actions)
+            final_state = self.lrelu(obs * actions)
+            q_values.append(self.hidden_to_scores(final_state))
+        return torch.cat(q_values)
+
+    def embed_observations(self, observations: str, infos: Dict):
+        obs_idxs = []
+        for obs, descr, inventory in zip(
+            observations, infos["description"], infos["inventory"]
+        ):
+            # TODO: change sep to smth other?
+            state_description = (
+                "[CLS] " + "[SEP]".join([obs, descr, inventory]) + " [SEP]"
+            )
+
+            tokenized_state_description = self.tokenizer.tokenize(state_description)
+            cleaned_tokenized_state_decription = [
+                token
+                for token in tokenized_state_description
+                if token not in {"$", "|", "", "_", "\\", "/"}
+            ]
+
+            # BERT does not support sentences longer than 512 tokens
+            indexed_state_description = self.tokenizer.convert_tokens_to_ids(
+                cleaned_tokenized_state_decription[:512]
+            )
+            indexed_state_description = torch.tensor(
+                indexed_state_description, device=self.device
+            )
+            obs_idxs.append(indexed_state_description)
+        # TODO: fine-tune?
+        with torch.no_grad():
+            padded_idxs = pad_sequence(obs_idxs, batch_first=True)
+            _, state_repr = self.bert(padded_idxs)
+        return state_repr
+
+    def embed_actions(self, actions):
+
+        embedded_actions = []
+        with torch.no_grad():
+            for action in actions:
+                tokenzed_action = self.tokenizer.tokenize(f"[CLS] {action} [SEP]")
+                action_indices = torch.tensor(
+                    [self.tokenizer.convert_tokens_to_ids(tokenzed_action)],
+                    device=self.device,
+                )
+                _, action_embedding = self.bert(action_indices)
+                embedded_actions.append(action_embedding)
+        return embedded_actions
+
+
 class BaseQlearningAgent:
     """ Q-learning agent that requires all available information and therefore receives maximum
     penalty
     """
 
     def __init__(
-        self, config: Params, net, experience_replay_buffer: Optional[Queue] = None
+        self,
+        config: Params,
+        net: QNet,
+        experience_replay_buffer: Optional[Queue] = None,
     ) -> None:
         self._initialized = False
         self._episode_has_started = False
@@ -36,10 +117,6 @@ class BaseQlearningAgent:
         self.experience_replay_buffer = experience_replay_buffer
 
         self.net = net
-        self.bert = (
-            BertModel.from_pretrained("bert-base-uncased").to(self.device).eval()
-        )
-        self.tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
 
         self.current_step = 0
         self.training = False
@@ -165,55 +242,6 @@ class BaseQlearningAgent:
         actions = [random.choice(adm_com) for adm_com in batch_admissible_commands]
         self.update_experience_replay_buffer(actions, observations, rewards, dones)
         return actions
-
-    def embed_observations(self, observations: str, infos: Dict):
-        obs_idxs = []
-        for obs, descr, inventory in zip(
-            observations, infos["description"], infos["inventory"]
-        ):
-            # TODO: change sep to smth other?
-            state_description = (
-                "[CLS] " + "[SEP]".join([obs, descr, inventory]) + " [SEP]"
-            )
-
-            tokenized_state_description = self.tokenizer.tokenize(state_description)
-            cleaned_tokenized_state_decription = [
-                token
-                for token in tokenized_state_description
-                if token not in {"$", "|", "", "_", "\\", "/"}
-            ]
-            indexed_state_description = self.tokenizer.convert_tokens_to_ids(
-                cleaned_tokenized_state_decription
-            )
-            indexed_state_description = torch.tensor(
-                indexed_state_description, device=self.device
-            )
-            obs_idxs.append(indexed_state_description)
-        # TODO: fine-tune?
-        with torch.no_grad():
-            padded_idxs = pad_sequence(obs_idxs, batch_first=True)
-            _, state_repr = self.bert(padded_idxs)
-        return state_repr
-
-    def embed_actions(self, actions):
-
-        embedded_actions = []
-        with torch.no_grad():
-            for action in actions:
-                tokenzed_action = self.tokenizer.tokenize(f"[CLS] {action} [SEP]")
-                action_indices = torch.tensor(
-                    [self.tokenizer.convert_tokens_to_ids(tokenzed_action)],
-                    device=self.device,
-                )
-                _, action_embedding = self.bert(action_indices)
-                embedded_actions.append(action_embedding)
-        return embedded_actions
-
-    def get_q_values(self, observations, batch_admissible_commands, infos):
-        embedded_actions = [
-            self.embed_actions(commands) for commands in batch_admissible_commands
-        ]
-        embedded_obs = self.embed_observations(observations, infos=infos)
 
     def update_experience_replay_buffer(self, actions, observations, rewards, dones):
         if self.prev_actions:
