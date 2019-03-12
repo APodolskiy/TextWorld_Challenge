@@ -6,9 +6,8 @@ import gym
 import textworld
 from tqdm import tqdm
 
-from agents.multiprocessing_agent.advanced_agent import QNet
 from agents.utils.params import Params
-from agents.multiprocessing_agent.custom_agent import BaseQlearningAgent
+from agents.multiprocessing_agent.custom_agent import BaseQlearningAgent, QNet
 from test_submission import _validate_requested_infos
 
 logging.basicConfig(level=logging.INFO)
@@ -47,7 +46,7 @@ def debug(game_files, buffer, params, target_net):
                 steps = [step + int(not done) for step, done in zip(steps, dones)]
                 command = actor.act(obs, scores, dones, infos)
 
-                actor.get_q_values(obs, infos["admissible_commands"], infos)
+                actor.net(obs, infos["admissible_commands"], infos)
 
                 obs, scores, dones, infos = env.step(command)
 
@@ -63,5 +62,5 @@ if __name__ == "__main__":
         buffer=Queue(),
         params=params,
         game_files=games,
-        target_net=QNet(params.get("agent").get("network"))
+        target_net=QNet(params.get("agent").get("network")).cuda()
     )
