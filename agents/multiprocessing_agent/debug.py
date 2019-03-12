@@ -47,7 +47,7 @@ def debug(game_files, buffer, params, target_net):
                 steps = [step + int(not done) for step, done in zip(steps, dones)]
                 command = actor.act(obs, scores, dones, infos)
 
-                actor.get_q_values(obs, infos["admissible_commands"])
+                actor.get_q_values(obs, infos["admissible_commands"], infos)
 
                 obs, scores, dones, infos = env.step(command)
 
