@@ -1,4 +1,5 @@
 import random
+from collections import namedtuple
 from typing import List, Dict, Any, Optional
 
 import torch
@@ -10,6 +11,11 @@ from torch.optim.lr_scheduler import StepLR
 
 from agents.utils.eps_scheduler import EpsScheduler
 from agents.utils.params import Params
+from agents.utils.replay import AbstractReplayMemory
+
+Transition = namedtuple(
+    "Transition", ("previous_state", "next_state", "action", "reward", "done")
+)
 
 
 class BaseQlearningAgent:
@@ -17,21 +23,35 @@ class BaseQlearningAgent:
     penalty
     """
 
-    def __init__(self, config: Params) -> None:
+    def __init__(
+        self,
+        config: Params,
+        net,
+        experience_replay_buffer: Optional[AbstractReplayMemory] = None,
+    ) -> None:
         self._initialized = False
-        self._epsiode_has_started = False
+        self._episode_has_started = False
         self.device = config.pop("device")
         self.max_steps_per_episode = config.pop("max_steps_per_episode")
 
+        self.experience_replay_buffer = experience_replay_buffer
+
+        self.net = net
+
         self.current_step = 0
+        self.training = False
+
+        self.prev_actions = None
+        self.prev_states = None
+        self.already_dones = None
 
     def train(self) -> None:
         """ Tell the agent it is in training mode. """
-        pass  # [You can insert code here.]
+        self.training = True
 
     def eval(self) -> None:
         """ Tell the agent it is in evaluation mode. """
-        pass  # [You can insert code here.]
+        self.training = False
 
     def select_additional_infos(self) -> EnvInfos:
         """
@@ -111,7 +131,7 @@ class BaseQlearningAgent:
         if not self._initialized:
             self._init()
 
-        self._epsiode_has_started = True
+        self._episode_has_started = True
 
         # [You can insert code here.]
 
@@ -126,17 +146,46 @@ class BaseQlearningAgent:
             score: The score obtained so far for each game.
             infos: Additional information for each game.
         """
-        self._epsiode_has_started = False
-
+        self._episode_has_started = False
+        self.prev_actions = None
+        self.prev_states = None
         # [You can insert code here.]
 
     def act(
         self,
-        obs: List[str],
-        scores: List[int],
+        observations: List[str],
+        rewards: List[int],
         dones: List[bool],
         infos: Dict[str, List[Any]],
     ):
         batch_admissible_commands = infos["admissible_commands"]
-        command = [random.choice(adm_com) for adm_com in batch_admissible_commands]
-        return command
+        actions = [random.choice(adm_com) for adm_com in batch_admissible_commands]
+        self.update_experience_replay_buffer(actions, observations, rewards, dones)
+        return actions
+
+    def update_experience_replay_buffer(self, actions, observations, rewards, dones):
+        if self.prev_actions:
+            # Formatting ot Boga
+            transitions = [
+                Transition(
+                    previous_state=previous_state,
+                    action=action,
+                    reward=reward,
+                    done=done,
+                    next_state=next_state,
+                )
+                for previous_state, action, reward, done, next_state, already_done in zip(
+                    self.prev_states,
+                    self.prev_actions,
+                    rewards,
+                    dones,
+                    observations,
+                    self.already_dones,
+                )
+                if not already_done
+            ]
+            self.experience_replay_buffer.push_batch(transitions)
+
+        self.prev_actions = actions
+        self.prev_states = observations
+        self.already_dones = dones
