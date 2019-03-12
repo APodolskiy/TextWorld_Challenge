@@ -38,9 +38,11 @@ class QNet(Module):
 
         self.device = device
 
-    def forward(self, observations, actions, infos):
+    def forward(self, state, actions):
 
-        embedded_observations = self.embed_observations(observations, infos)
+        observations, description, inventory = list(zip(*state))
+
+        embedded_observations = self.embed_observations(observations, description=description, inventory=inventory)
         embedded_actions = self.embed_actions(actions)
 
         q_values = []
@@ -52,11 +54,9 @@ class QNet(Module):
             q_values.append(self.hidden_to_scores(final_state))
         return torch.cat(q_values)
 
-    def embed_observations(self, observations: str, infos: Dict):
+    def embed_observations(self, observations: str, description, inventory):
         obs_idxs = []
-        for obs, descr, inventory in zip(
-            observations, infos["description"], infos["inventory"]
-        ):
+        for obs, descr, inventory in zip(observations, description, inventory):
             # TODO: change sep to smth other?
             state_description = (
                 "[CLS] " + "[SEP]".join([obs, descr, inventory]) + " [SEP]"
@@ -84,7 +84,6 @@ class QNet(Module):
         return state_repr
 
     def embed_actions(self, actions):
-
         embedded_actions = []
         with torch.no_grad():
             for action in actions:
@@ -240,7 +239,12 @@ class BaseQlearningAgent:
     ):
         batch_admissible_commands = infos["admissible_commands"]
         actions = [random.choice(adm_com) for adm_com in batch_admissible_commands]
-        self.update_experience_replay_buffer(actions, observations, rewards, dones)
+        self.update_experience_replay_buffer(
+            actions,
+            tuple(zip(observations, infos["description"], infos["inventory"])),
+            rewards,
+            dones,
+        )
         return actions
 
     def update_experience_replay_buffer(self, actions, observations, rewards, dones):
