@@ -1,4 +1,6 @@
 import random
+from collections import namedtuple
+from multiprocessing import Queue
 from typing import List, Dict, Any, Optional
 
 import torch
@@ -6,31 +8,16 @@ from pytorch_pretrained_bert import BertModel, BertTokenizer
 from textworld import EnvInfos
 from torch.nn import Module
 import torch.nn as nn
+from torch.nn.utils.rnn import pad_sequence
 from torch.optim.lr_scheduler import StepLR
 
 from agents.utils.eps_scheduler import EpsScheduler
 from agents.utils.params import Params
+from agents.utils.replay import AbstractReplayMemory
 
-
-class QNet(Module):
-    def __init__(self, config: Params):
-        super().__init__()
-
-        self.hidden_size = config.pop("hidden_size")
-        self.embedding_size = config.pop("embedding_size")
-
-        self.obs_to_hidden = nn.Linear(self.embedding_size, self.hidden_size)
-        self.actions_to_hidden = nn.Linear(self.embedding_size, self.hidden_size)
-        self.hidden_to_scores = nn.Linear(self.hidden_size, 1)
-
-        self.lrelu = nn.LeakyReLU(0.2)
-
-    def forward(self, observation, actions):
-        obs = self.obs_to_hidden(observation)
-        actions = self.actions_to_hidden(actions)
-        final_state = self.lrelu(obs * actions)
-        q_values = self.hidden_to_scores(final_state)
-        return q_values
+Transition = namedtuple(
+    "Transition", ("previous_state", "next_state", "action", "reward", "done")
+)
 
 
 class BaseQlearningAgent:
@@ -38,29 +25,36 @@ class BaseQlearningAgent:
     penalty
     """
 
-    def __init__(self, config: Params) -> None:
+    def __init__(
+        self, config: Params, net, experience_replay_buffer: Optional[Queue] = None
+    ) -> None:
         self._initialized = False
-        self._epsiode_has_started = False
+        self._episode_has_started = False
         self.device = config.pop("device")
         self.max_steps_per_episode = config.pop("max_steps_per_episode")
 
+        self.experience_replay_buffer = experience_replay_buffer
+
+        self.net = net
         self.bert = (
             BertModel.from_pretrained("bert-base-uncased").to(self.device).eval()
         )
         self.tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
 
-        self.qnet = QNet(config.pop("network"))
-        self.eps_scheduler = EpsScheduler(config.pop("epsilon"))
-
         self.current_step = 0
+        self.training = False
+
+        self.prev_actions = None
+        self.prev_states = None
+        self.already_dones = None
 
     def train(self) -> None:
         """ Tell the agent it is in training mode. """
-        pass  # [You can insert code here.]
+        self.training = True
 
     def eval(self) -> None:
         """ Tell the agent it is in evaluation mode. """
-        pass  # [You can insert code here.]
+        self.training = False
 
     def select_additional_infos(self) -> EnvInfos:
         """
@@ -140,7 +134,7 @@ class BaseQlearningAgent:
         if not self._initialized:
             self._init()
 
-        self._epsiode_has_started = True
+        self._episode_has_started = True
 
         # [You can insert code here.]
 
@@ -155,60 +149,22 @@ class BaseQlearningAgent:
             score: The score obtained so far for each game.
             infos: Additional information for each game.
         """
-        self._epsiode_has_started = False
-
+        self._episode_has_started = False
+        self.prev_actions = None
+        self.prev_states = None
         # [You can insert code here.]
 
     def act(
         self,
-        obs: str,
-        scores: List[int],
+        observations: List[str],
+        rewards: List[int],
         dones: List[bool],
         infos: Dict[str, List[Any]],
     ):
-        """
-        Acts upon the current list of observations.
-
-        One text command must be returned for each observation.
-
-        Arguments:
-            obs: Previous command's feedback for each game.
-            scores: The score obtained so far for each game.
-            dones: Whether a game is finished.
-            infos: Additional information for each game.
-
-        Returns:
-            Text commands to be performed (one per observation).
-            If episode had ended (e.g. `all(dones)`), the returned
-            value is ignored.
-
-        Notes:
-            Commands returned for games marked as `done` have no effect.
-            The states for finished games are simply copy over until all
-            games are done.
-        """
-        # if all(dones):
-        #     self._end_episode(obs, scores, infos)
-        #     return  # Nothing to return.
-        #
-        # if not self._episode_has_started:
-        #     self._start_episode(obs, infos)
-        # TODO: no batching currecntly
-        admissible_commands = infos["admissible_commands"]
-
-        if random.random() < self.eps_scheduler.eps(self.current_step):
-            command = random.choice(admissible_commands)
-        else:
-            state_repr = self.embed_observation(obs, infos)
-            actions_repr = self.embed_actions(admissible_commands)
-            q_values = self.qnet(state_repr, torch.cat(actions_repr, dim=0))
-            max_q_val, idx_max_q_val = q_values.max()
-            command = admissible_commands[idx_max_q_val]
-        self.current_step += 1
-        return command
-        # raise NotImplementedError()
-        # [Insert your code here to obtain the commands.]
-        # return ["wait"] * len(obs)  # No-op
+        batch_admissible_commands = infos["admissible_commands"]
+        actions = [random.choice(adm_com) for adm_com in batch_admissible_commands]
+        self.update_experience_replay_buffer(actions, observations, rewards, dones)
+        return actions
 
     def embed_observation(self, obs: str, infos: Dict):
         # TODO: change sep to smth other?
@@ -236,6 +192,9 @@ class BaseQlearningAgent:
         return state_repr
 
     def embed_actions(self, actions):
+
+        pad_sequence
+
         embedded_actions = []
         with torch.no_grad():
             for action in actions:
@@ -247,3 +206,31 @@ class BaseQlearningAgent:
                 _, action_embedding = self.bert(action_indices)
                 embedded_actions.append(action_embedding)
         return embedded_actions
+
+    def get_q_values(self, observations, admissible_commands):
+        embedded_actions = self.embed_actions(admissible_commands)
+
+    def update_experience_replay_buffer(self, actions, observations, rewards, dones):
+        if self.prev_actions:
+            for previous_state, action, reward, done, next_state, already_done in zip(
+                self.prev_states,
+                self.prev_actions,
+                rewards,
+                dones,
+                observations,
+                self.already_dones,
+            ):
+                if not already_done:
+                    self.experience_replay_buffer.put(
+                        Transition(
+                            previous_state=previous_state,
+                            action=action,
+                            reward=reward,
+                            done=done,
+                            next_state=next_state,
+                        )
+                    )
+
+        self.prev_actions = actions
+        self.prev_states = observations
+        self.already_dones = dones
