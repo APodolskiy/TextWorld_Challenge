@@ -1,16 +1,16 @@
 from collections import namedtuple
-from multiprocessing.managers import BaseManager, NamespaceProxy
+from multiprocessing.managers import BaseManager
 import os
 import random
 import torch.multiprocessing as mp
 import time
 from typing import NamedTuple
 
-Transition = namedtuple('Transition', ['val1', 'val2'])
+Transition = namedtuple("Transition", ["val1", "val2"])
 
 
 class ReplayMemory:
-    def __init__(self, capacity: int = 100000):
+    def __init__(self, capacity: int = 100_000):
         self.capacity = capacity
         self.buffer = []
         self.position = 0
@@ -33,7 +33,7 @@ class ReplayMemory:
         return len(self.buffer)
 
 
-BaseManager.register('ReplayMemory', ReplayMemory)
+BaseManager.register("ReplayMemory", ReplayMemory)
 
 
 class Learner:
@@ -70,10 +70,12 @@ class Actor(mp.Process):
 
 
 def add_experience(shared_mem, replay_mem):
-    while True:
+    for i in range(50000):
+        print(i)
         while shared_mem.qsize() or not shared_mem.empty():
             time, value = shared_mem.get()
             replay_mem.push(Transition(time, value))
+    print("Jopa!")
 
 
 if __name__ == "__main__":
@@ -83,10 +85,10 @@ if __name__ == "__main__":
 
     replay_manager = BaseManager()
     replay_manager.start()
-    replay_mem = replay_manager.ReplayMemory(100000)
+    replay_mem = replay_manager.ReplayMemory(100_000)
 
     learner = Learner(shared_state, replay_mem)
-    learner_process = mp.Process(target=learner.learn, args=(300,))
+    learner_process = mp.Process(target=learner.learn, args=(3,))
     learner_process.start()
 
     actor_processes = []
@@ -96,7 +98,9 @@ if __name__ == "__main__":
         actor_process.start()
         actor_processes.append(actor_process)
 
-    replay_mem_process = mp.Process(target=add_experience, args=(shared_mem, replay_mem))
+    replay_mem_process = mp.Process(
+        target=add_experience, args=(shared_mem, replay_mem)
+    )
     replay_mem_process.start()
 
     learner_process.join()
