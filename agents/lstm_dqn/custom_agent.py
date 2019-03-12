@@ -13,7 +13,7 @@ from textworld import EnvInfos
 
 from agents.lstm_dqn.model import LSTM_DQN
 from agents.utils.generic import to_np, to_pt, preproc, _words_to_ids, pad_sequences, max_len
-from agents.utils.replay import PrioritizedReplayMemory, Transition
+from agents.lstm_dqn.replay import PrioritizedReplayMemory, Transition
 from agents.utils.cache import HistoryScoreCache
 
 
