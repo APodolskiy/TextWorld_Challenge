@@ -6,8 +6,10 @@ import gym
 import textworld
 from tqdm import tqdm
 
+from agents.multiprocessing_agent.learning import learn
 from agents.utils.params import Params
 from agents.multiprocessing_agent.custom_agent import BaseQlearningAgent, QNet
+from agents.utils.replay import ExperienceReplay
 from test_submission import _validate_requested_infos
 
 logging.basicConfig(level=logging.INFO)
@@ -18,7 +20,7 @@ def debug(game_files, buffer, params, target_net):
     actor = BaseQlearningAgent(
         net=target_net, experience_replay_buffer=buffer, config=params.pop("agent")
     )
-
+    replay = ExperienceReplay()
     requested_infos = actor.select_additional_infos()
     _validate_requested_infos(requested_infos)
 
@@ -45,10 +47,9 @@ def debug(game_files, buffer, params, target_net):
                 # Increase step counts.
                 steps = [step + int(not done) for step, done in zip(steps, dones)]
                 command = actor.act(obs, scores, dones, infos)
-
-                actor.net(obs, infos["admissible_commands"], infos)
-
                 obs, scores, dones, infos = env.step(command)
+
+        learn(net=actor.net, replay_buffer=replay, queue=buffer)
 
 
 if __name__ == "__main__":
