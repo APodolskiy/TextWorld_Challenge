@@ -16,7 +16,7 @@ from agents.utils.params import Params
 from agents.utils.replay import AbstractReplayMemory
 
 Transition = namedtuple(
-    "Transition", ("previous_state", "next_state", "action", "reward", "done")
+    "Transition", ("previous_state", "next_state", "action", "reward", "done", "allowed_actions")
 )
 
 
@@ -241,17 +241,19 @@ class BaseQlearningAgent:
         actions = [random.choice(adm_com) for adm_com in batch_admissible_commands]
         self.update_experience_replay_buffer(
             actions,
+            batch_admissible_commands,
             tuple(zip(observations, infos["description"], infos["inventory"])),
             rewards,
-            dones,
+            dones
         )
         return actions
 
-    def update_experience_replay_buffer(self, actions, observations, rewards, dones):
+    def update_experience_replay_buffer(self, actions, batch_allowed_actions, observations, rewards, dones):
         if self.prev_actions:
-            for previous_state, action, reward, done, next_state, already_done in zip(
+            for previous_state, action, allowed_actions, reward, done, next_state, already_done in zip(
                 self.prev_states,
                 self.prev_actions,
+                batch_allowed_actions,
                 rewards,
                 dones,
                 observations,
@@ -262,6 +264,7 @@ class BaseQlearningAgent:
                         Transition(
                             previous_state=previous_state,
                             action=action,
+                            allowed_actions=allowed_actions,
                             reward=reward,
                             done=done,
                             next_state=next_state,
