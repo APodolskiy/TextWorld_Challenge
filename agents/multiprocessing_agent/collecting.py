@@ -1,13 +1,23 @@
 import gym
 import textworld
 from tqdm import tqdm
-from agents.multiprocessing_agent.custom_agent import BaseQlearningAgent
+from agents.multiprocessing_agent.custom_agent import BaseQlearningAgent, QNet
 from test_submission import _validate_requested_infos
 
 
-def collect_experience(game_files, buffer, train_params, target_net):
+def collect_experience(
+    game_files,
+    buffer,
+    train_params,
+    eps_scheduler_params,
+    target_net: QNet,
+    policy_net: QNet,
+):
     actor = BaseQlearningAgent(
-        net=target_net, experience_replay_buffer=buffer, config=train_params
+        net=target_net,
+        experience_replay_buffer=buffer,
+        params=train_params,
+        eps_scheduler_params=eps_scheduler_params,
     )
     requested_infos = actor.select_additional_infos()
     _validate_requested_infos(requested_infos)
@@ -26,8 +36,13 @@ def collect_experience(game_files, buffer, train_params, target_net):
     )
     env = gym.make(env_id)
 
-    for epoch_no in range(1, train_params.pop("n_epochs") + 1):
-        for _ in tqdm(range(len(game_files))):
+    update_freq = train_params.pop("target_net_update_freq")
+    for epoch_no in range(1, train_params.pop("n_epochs_collection") + 1):
+        for step in tqdm(range(1, len(game_files) + 1)):
+
+            if step % update_freq == 0:
+                target_net.load_state_dict(policy_net.state_dict())
+
             obs, infos = env.reset()
             actor.train()
 
