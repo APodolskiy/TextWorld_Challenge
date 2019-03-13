@@ -113,7 +113,7 @@ class BaseQlearningAgent:
     ) -> None:
         self._initialized = False
         self._episode_has_started = False
-        self.device = config.pop("device")
+        self.device = config.pop("actor_device")
         self.max_steps_per_episode = config.pop("max_steps_per_episode")
 
         self.experience_replay_buffer = experience_replay_buffer
