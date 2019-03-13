@@ -26,11 +26,12 @@ def learn(
         [q_values.max().item() for q_values in next_state_q_values],
         device=next_state_q_values[0].device,
     )
-
     # TODO: terminal states?
-    expected_values = params.pop("gamma") * next_state_values + torch.tensor(
-        batch.reward, device=q_values_selected_actions.device
+    expected_values = (
+        torch.tensor(batch.reward, device=q_values_selected_actions.device)
+        + params.pop("gamma") * next_state_values
     )
+
     optimizer.zero_grad()
     loss = smooth_l1_loss(q_values_selected_actions, expected_values)
     loss.backward()
