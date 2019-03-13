@@ -17,16 +17,19 @@ if __name__ == "__main__":
         if f.is_file() and f.suffix == ".ulx"
     ]
     params = Params.from_file("configs/config.jsonnet")
-
     my_net = QNet(params.get("network")).cuda()
-
     queue = Queue()
-
     collect_experience(
         buffer=queue,
-        params=params,
+        train_params=params.get("training"),
         game_files=games,
         target_net=my_net,
     )
     replay_buffer = ExperienceReplay()
-    learn(net=my_net, target_net=my_net, replay_buffer=replay_buffer, queue=queue)
+    learn(
+        net=my_net,
+        target_net=my_net,
+        replay_buffer=replay_buffer,
+        queue=queue,
+        params=params.pop("training"),
+    )
