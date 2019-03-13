@@ -1,7 +1,7 @@
 from logging import info, warning
 from multiprocessing import Queue
 from time import sleep
-
+from tensorboardX import SummaryWriter
 import torch
 from torch.nn.functional import smooth_l1_loss
 from torch.optim import Adam
@@ -16,14 +16,16 @@ def learn(
     replay_buffer: AbstractReplayMemory,
     queue: Queue,
     params,
+    log_dir: str
 ):
     sleep(2.0)
+    writer = SummaryWriter()
     info("Started learning process")
     max_samples = params.pop("max_samples")
     batch_size = params.pop("batch_size")
     gamma = params.pop("gamma")
     optimizer = Adam(policy_net.parameters(), lr=params.pop("lr"))
-    for _ in range(params.pop("n_learning_steps")):
+    for learning_step in range(params.pop("n_learning_steps")):
         samples = 0
         while not queue.empty() and samples < max_samples:
             samples += 1
@@ -51,6 +53,7 @@ def learn(
             loss.backward()
             optimizer.step()
 
+            writer.add_scalar("train/loss", loss.item(), learning_step)
             info(f"Done learning step, loss={loss.item()}")
 
         except ValueError:
