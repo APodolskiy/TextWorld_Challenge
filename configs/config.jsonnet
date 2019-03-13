@@ -2,6 +2,7 @@
 training: {
     n_epochs: 1,
     n_parallel_envs: 2,
+    use_separate_process_envs: false,
     batch_size: 16,
     lr: 1e-3,
     gamma: 0.95,

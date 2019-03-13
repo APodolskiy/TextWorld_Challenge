@@ -22,7 +22,7 @@ def collect_experience(game_files, buffer, train_params, target_net):
     env_id = textworld.gym.make_batch(
         env_id,
         batch_size=batch_size,
-        parallel=train_params.pop("use_seperate_process_envs"),
+        parallel=train_params.pop("use_separate_process_envs"),
     )
     env = gym.make(env_id)
 
