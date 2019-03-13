@@ -1,4 +1,6 @@
+from logging import info, warning
 from multiprocessing import Queue
+from time import sleep
 
 import torch
 from torch.nn.functional import smooth_l1_loss
@@ -9,30 +11,48 @@ from agents.utils.replay import AbstractReplayMemory
 
 
 def learn(
-    net: QNet,
+    policy_net: QNet,
     target_net: QNet,
     replay_buffer: AbstractReplayMemory,
     queue: Queue,
     params,
 ):
-    optimizer = Adam(net.parameters(), lr=params.pop("lr"))
-    while not queue.empty():
-        replay_buffer.push(queue.get())
-    batch = Transition(*zip(*replay_buffer.sample(params.pop("batch_size"))))
-    q_values_selected_actions = torch.cat(net(batch.previous_state, batch.action))
+    sleep(2.0)
+    info("Started learning process")
+    max_samples = params.pop("max_samples")
+    batch_size = params.pop("batch_size")
+    gamma = params.pop("gamma")
+    optimizer = Adam(policy_net.parameters(), lr=params.pop("lr"))
+    for _ in range(params.pop("n_learning_steps")):
+        samples = 0
+        while not queue.empty() and samples < max_samples:
+            samples += 1
+            replay_buffer.push(queue.get())
 
-    next_state_q_values = target_net(batch.next_state, batch.allowed_actions)
-    next_state_values = torch.tensor(
-        [q_values.max().item() for q_values in next_state_q_values],
-        device=next_state_q_values[0].device,
-    )
-    # TODO: terminal states?
-    expected_values = (
-        torch.tensor(batch.reward, device=q_values_selected_actions.device)
-        + params.pop("gamma") * next_state_values
-    )
+        try:
+            batch = Transition(*zip(*replay_buffer.sample(batch_size)))
+            q_values_selected_actions = torch.cat(
+                policy_net(batch.previous_state, batch.action)
+            )
 
-    optimizer.zero_grad()
-    loss = smooth_l1_loss(q_values_selected_actions, expected_values)
-    loss.backward()
-    optimizer.step()
+            next_state_q_values = target_net(batch.next_state, batch.allowed_actions)
+            next_state_values = torch.tensor(
+                [q_values.max().item() for q_values in next_state_q_values],
+                device=policy_net.device,
+            )
+            # TODO: terminal states?
+            expected_values = (
+                torch.tensor(batch.reward, device=q_values_selected_actions.device)
+                + gamma * next_state_values
+            )
+
+            optimizer.zero_grad()
+            loss = smooth_l1_loss(q_values_selected_actions, expected_values)
+            loss.backward()
+            optimizer.step()
+
+            info(f"Done learning step, loss={loss.item()}")
+
+        except ValueError:
+            warning("Not enough elements in buffer!")
+            sleep(2.0)
