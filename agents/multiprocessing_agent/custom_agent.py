@@ -31,14 +31,16 @@ class QNet(Module):
         self.hidden_size = config.get("hidden_size")
         self.embedding_size = config.get("embedding_size")
 
+        # TODO: probably need recurrent nets here
         self.obs_to_hidden = nn.Linear(self.embedding_size, self.hidden_size)
         self.actions_to_hidden = nn.Linear(self.embedding_size, self.hidden_size)
         self.hidden_to_scores = nn.Linear(self.hidden_size, 1)
 
-        self.lrelu = nn.LeakyReLU(0.2)
+        self.lrelu = nn.LeakyReLU()
 
         self.device = device
 
+    # TODO: use receipt
     def forward(self, state_batch, actions_batch):
         observations, description, inventory = list(zip(*state_batch))
         embedded_observations = self.embed_observations(
@@ -107,18 +109,21 @@ class BaseQlearningAgent:
 
     def __init__(
         self,
-        config: Params,
+        params: Params,
         net: QNet,
+        eps_scheduler_params,
         experience_replay_buffer: Optional[Queue] = None,
     ) -> None:
         self._initialized = False
         self._episode_has_started = False
-        self.device = config.pop("actor_device")
-        self.max_steps_per_episode = config.pop("max_steps_per_episode")
+        self.device = params.pop("actor_device")
+        self.max_steps_per_episode = params.pop("max_steps_per_episode")
 
         self.experience_replay_buffer = experience_replay_buffer
 
         self.net = net
+
+        self.eps_scheduler = EpsScheduler(eps_scheduler_params)
 
         self.current_step = 0
         self.training = False
@@ -241,7 +246,15 @@ class BaseQlearningAgent:
         infos: Dict[str, List[Any]],
     ):
         batch_admissible_commands = infos["admissible_commands"]
-        actions = [random.choice(adm_com) for adm_com in batch_admissible_commands]
+
+        # TODO: hzhz
+        if random.random() < self.eps_scheduler.eps(self.current_step):
+            actions = [random.choice(adm_com) for adm_com in batch_admissible_commands]
+        else:
+            print("best actions!")
+            q_values = self.net(tuple(zip(observations, infos["description"], infos["inventory"])), batch_admissible_commands)
+            selected_idxs = [q_val.argmax().item() for q_val in q_values]
+            actions = [acts[idxs] for acts, idxs in zip(batch_admissible_commands, selected_idxs)]
         self.update_experience_replay_buffer(
             actions,
             batch_admissible_commands,
@@ -249,6 +262,7 @@ class BaseQlearningAgent:
             rewards,
             dones,
         )
+        self.current_step += 1
         return actions
 
     def update_experience_replay_buffer(
