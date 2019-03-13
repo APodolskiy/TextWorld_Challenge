@@ -9,13 +9,13 @@ from agents.utils.replay import AbstractReplayMemory
 
 
 def learn(
-    net: QNet, target_net: QNet, replay_buffer: AbstractReplayMemory, queue: Queue
+    net: QNet, target_net: QNet, replay_buffer: AbstractReplayMemory, queue: Queue, params
 ):
     # TODO: put lr into config
-    optimizer = Adam(net.parameters(), lr=1e-3)
+    optimizer = Adam(net.parameters(), lr=params.pop("lr"))
     while not queue.empty():
         replay_buffer.push(queue.get())
-    batch = Transition(*zip(*replay_buffer.sample(5)))
+    batch = Transition(*zip(*replay_buffer.sample(params.pop("batch_size"))))
     q_values_selected_actions = torch.cat(net(batch.previous_state, batch.action))
 
     next_state_q_values = target_net(batch.next_state, batch.allowed_actions)
@@ -26,12 +26,10 @@ def learn(
 
     # TODO: put gamma in config
     # TODO: rewards are computed incorrectly: you need differences
-    expected_values = q_values_selected_actions + 0.95 * torch.tensor(
+    expected_values = q_values_selected_actions + params.pop("gamma") * torch.tensor(
         batch.reward, device=q_values_selected_actions.device,
     )
     optimizer.zero_grad()
     loss = smooth_l1_loss(next_state_values, expected_values)
     loss.backward()
     optimizer.step()
-
-    return
