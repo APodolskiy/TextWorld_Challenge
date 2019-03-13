@@ -9,11 +9,9 @@ from textworld import EnvInfos
 from torch.nn import Module
 import torch.nn as nn
 from torch.nn.utils.rnn import pad_sequence
-from torch.optim.lr_scheduler import StepLR
 
 from agents.utils.eps_scheduler import EpsScheduler
 from agents.utils.params import Params
-from agents.utils.replay import AbstractReplayMemory
 
 Transition = namedtuple(
     "Transition",
@@ -116,7 +114,6 @@ class BaseQlearningAgent:
     ) -> None:
         self._initialized = False
         self._episode_has_started = False
-        self.device = params.pop("actor_device")
         self.max_steps_per_episode = params.pop("max_steps_per_episode")
 
         self.experience_replay_buffer = experience_replay_buffer
@@ -251,10 +248,15 @@ class BaseQlearningAgent:
         if random.random() < self.eps_scheduler.eps(self.current_step):
             actions = [random.choice(adm_com) for adm_com in batch_admissible_commands]
         else:
-            print("best actions!")
-            q_values = self.net(tuple(zip(observations, infos["description"], infos["inventory"])), batch_admissible_commands)
+            q_values = self.net(
+                tuple(zip(observations, infos["description"], infos["inventory"])),
+                batch_admissible_commands,
+            )
             selected_idxs = [q_val.argmax().item() for q_val in q_values]
-            actions = [acts[idxs] for acts, idxs in zip(batch_admissible_commands, selected_idxs)]
+            actions = [
+                acts[idxs]
+                for acts, idxs in zip(batch_admissible_commands, selected_idxs)
+            ]
         self.update_experience_replay_buffer(
             actions,
             batch_admissible_commands,
