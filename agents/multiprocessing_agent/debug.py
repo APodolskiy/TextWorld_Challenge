@@ -22,8 +22,10 @@ if __name__ == "__main__":
     collect_experience(
         buffer=queue,
         train_params=params.get("training"),
+        eps_scheduler_params=params.pop("epsilon"),
         game_files=games,
         target_net=my_net,
+        policy_net=my_net
     )
     replay_buffer = ExperienceReplay()
     learn(
