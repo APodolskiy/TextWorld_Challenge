@@ -16,7 +16,8 @@ from agents.utils.params import Params
 from agents.utils.replay import AbstractReplayMemory
 
 Transition = namedtuple(
-    "Transition", ("previous_state", "next_state", "action", "reward", "done", "allowed_actions")
+    "Transition",
+    ("previous_state", "next_state", "action", "reward", "done", "allowed_actions"),
 )
 
 
@@ -38,21 +39,23 @@ class QNet(Module):
 
         self.device = device
 
-    def forward(self, state, actions):
-
-        observations, description, inventory = list(zip(*state))
-
-        embedded_observations = self.embed_observations(observations, description=description, inventory=inventory)
-        embedded_actions = self.embed_actions(actions)
-
+    def forward(self, state_batch, actions_batch):
+        observations, description, inventory = list(zip(*state_batch))
+        embedded_observations = self.embed_observations(
+            observations, description=description, inventory=inventory
+        )
         q_values = []
+        for obs, act in zip(embedded_observations, actions_batch):
 
-        for obs, actions in zip(embedded_observations, embedded_actions):
+            if isinstance(act, str):
+                act = [act]
+
+            embedded_actions = self.embed_actions(act)
             obs = self.obs_to_hidden(obs)
-            actions = self.actions_to_hidden(actions)
+            actions = self.actions_to_hidden(embedded_actions)
             final_state = self.lrelu(obs * actions)
             q_values.append(self.hidden_to_scores(final_state))
-        return torch.cat(q_values)
+        return q_values
 
     def embed_observations(self, observations: str, description, inventory):
         obs_idxs = []
@@ -94,7 +97,7 @@ class QNet(Module):
                 )
                 _, action_embedding = self.bert(action_indices)
                 embedded_actions.append(action_embedding)
-        return embedded_actions
+        return torch.cat(embedded_actions)
 
 
 class BaseQlearningAgent:
@@ -244,13 +247,23 @@ class BaseQlearningAgent:
             batch_admissible_commands,
             tuple(zip(observations, infos["description"], infos["inventory"])),
             rewards,
-            dones
+            dones,
         )
         return actions
 
-    def update_experience_replay_buffer(self, actions, batch_allowed_actions, observations, rewards, dones):
+    def update_experience_replay_buffer(
+        self, actions, batch_allowed_actions, observations, rewards, dones
+    ):
         if self.prev_actions:
-            for previous_state, action, allowed_actions, reward, done, next_state, already_done in zip(
+            for (
+                previous_state,
+                action,
+                allowed_actions,
+                reward,
+                done,
+                next_state,
+                already_done,
+            ) in zip(
                 self.prev_states,
                 self.prev_actions,
                 batch_allowed_actions,
@@ -265,7 +278,7 @@ class BaseQlearningAgent:
                             previous_state=previous_state,
                             action=action,
                             allowed_actions=allowed_actions,
-                            reward=reward,
+                            reward=float(reward),
                             done=done,
                             next_state=next_state,
                         )

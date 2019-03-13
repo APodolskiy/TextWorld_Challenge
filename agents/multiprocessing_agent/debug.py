@@ -15,7 +15,7 @@ from test_submission import _validate_requested_infos
 logging.basicConfig(level=logging.INFO)
 
 
-def debug(game_files, buffer, params, target_net):
+def debug(game_files, buffer, params, policy_net, target_net):
     train_params = params.pop("training")
     actor = BaseQlearningAgent(
         net=target_net, experience_replay_buffer=buffer, config=params.pop("agent")
@@ -49,7 +49,7 @@ def debug(game_files, buffer, params, target_net):
                 command = actor.act(obs, scores, dones, infos)
                 obs, scores, dones, infos = env.step(command)
 
-        learn(net=actor.net, replay_buffer=replay, queue=buffer)
+        learn(net=policy_net, target_net=target_net, replay_buffer=replay, queue=buffer)
 
 
 if __name__ == "__main__":
@@ -59,9 +59,13 @@ if __name__ == "__main__":
         if f.is_file() and f.suffix == ".ulx"
     ]
     params = Params.from_file("configs/config.jsonnet")
+
+    my_net= QNet(params.get("agent").get("network")).cuda()
+
     debug(
         buffer=Queue(),
         params=params,
-        game_files=games,
-        target_net=QNet(params.get("agent").get("network")).cuda()
+        game_files=games[:4],
+        target_net=my_net,
+        policy_net=my_net
     )
