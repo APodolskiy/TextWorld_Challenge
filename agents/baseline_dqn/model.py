@@ -1,7 +1,8 @@
 import logging
-from typing import Dict
+from typing import Dict, List
 from types import SimpleNamespace
 
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -26,5 +27,5 @@ class LSTM_DQN(nn.Module):
         self.action_encoder = nn.LSTM(input_size=self.config.embed_size,
                                       hidden_size=self.config.h_size)
 
-    def forward(self, infos: Dict[str]):
+    def forward(self, description: List[int], commands: List[List[int]]):
         pass
