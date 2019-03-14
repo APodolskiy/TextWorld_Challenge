@@ -13,7 +13,9 @@ training: {
     gamma: 0.95,
     max_steps_per_episode: 100,
     max_samples: 100,
-    n_learning_steps: 10000000
+    n_learning_steps: 10000000,
+    saving_freq: 10,
+    model_path: "saved_model.pth"
     },
 network: {
     embedding_size: 768,
@@ -22,7 +24,7 @@ network: {
 epsilon: {
     init_eps: 1.0,
     min_eps: 0.01,
-    gamma: 0.98,
+    gamma: 0.92,
     step_size: 5
     }
 }
