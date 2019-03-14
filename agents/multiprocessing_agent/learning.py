@@ -1,5 +1,6 @@
 from logging import info, warning
 from multiprocessing import Queue
+from queue import Empty
 from time import sleep
 from typing import Optional
 
@@ -27,14 +28,19 @@ def learn(
     max_samples = params.pop("max_samples")
     batch_size = params.pop("batch_size")
     gamma = params.pop("gamma")
+    saving_freq = params.pop("saving_freq")
+    model_path = params.pop("model_path")
     optimizer = Adam(policy_net.parameters(), lr=params.pop("lr"))
     for learning_step in range(params.pop("n_learning_steps")):
         samples = 0
-        while not queue.empty() and samples < max_samples:
-            samples += 1
-            transition = queue.get()
-            replay_buffer.push(transition, is_prior=transition.reward != 0)
-
+        while samples < max_samples:
+            try:
+                transition = queue.get(True, 1.0)
+                replay_buffer.push(transition, is_prior=transition.reward != 0)
+                samples += 1
+            except Empty:
+                print(queue.empty())
+                break
         try:
             batch = Transition(*zip(*replay_buffer.sample(batch_size)))
             policy_net.train()
@@ -50,9 +56,10 @@ def learn(
                 non_terminal_idxs
             ]
             target_net.eval()
-            next_state_q_values = target_net(
-                next_non_final_states, next_non_final_allowed_actions
-            )
+            with torch.no_grad():
+                next_state_q_values = target_net(
+                    next_non_final_states, next_non_final_allowed_actions
+                )
 
             tensor_indices = torch.tensor(
                 tuple(non_terminal_idxs), dtype=torch.uint8, device=policy_net.device
@@ -72,6 +79,10 @@ def learn(
             loss.backward()
             optimizer.step()
             if log_dir is not None:
+                if (learning_step + 1) % saving_freq == 0:
+                    info("Saving learner weights")
+                    torch.save(target_net.state_dict(), model_path)
+
                 writer.add_scalar("train/loss", loss.item(), learning_step)
                 writer.add_histogram(
                     "train/learner_target_net_weights",
