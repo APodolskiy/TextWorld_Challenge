@@ -121,10 +121,8 @@ class BinaryPrioritizeReplayMemory(AbstractReplayMemory):
         self.secondary_position = (self.secondary_position + 1) % self.secondary_capacity
 
     def sample(self, batch_size: int) -> List[NamedTuple]:
-        if self.priority_fraction > 0.0:
-            if len(self.secondary_buffer) < batch_size:
-                raise ValueError(f"Can't sample batch of size {batch_size} from the buffer!\n"
-                                 f"There are only {len(self.secondary_buffer)} elements in the buffer.")
+        if self.priority_fraction == 0.0:
+            batch_size = min(batch_size, len(self.secondary_buffer))
             return random.sample(self.secondary_buffer, batch_size)
         else:
             prior_size = min(int(batch_size * self.priority_fraction), len(self.prior_buffer))
