@@ -13,7 +13,9 @@ training: {
     gamma: 0.95,
     max_steps_per_episode: 100,
     max_samples: 100,
-    n_learning_steps: 1000
+    n_learning_steps: 1000,
+    saving_freq: 10,
+    model_path: "saved_model.pth"
     },
 network: {
     embedding_size: 768,
