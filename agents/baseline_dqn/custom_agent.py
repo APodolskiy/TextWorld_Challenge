@@ -12,6 +12,7 @@ from textworld import EnvInfos
 from agents.utils.generic import to_np, to_pt, preproc, _words_to_ids, pad_sequences, max_len
 from agents.utils.eps_scheduler import LinearScheduler
 from agents.baseline_dqn.model import LSTM_DQN
+from agents.utils.replay import BinaryPrioritizeReplayMemory
 
 
 class CustomAgent:
@@ -45,18 +46,31 @@ class CustomAgent:
             self._init(obs, infos)
 
         admissible_commands = infos["admissible_commands"]
+        # Choose actions
         actions = []
         if random.random() > self.eps_scheduler(self.act_steps):
-            actions = [random.choice(env_commands) for env_commands in admissible_commands]
+            actions.extend([random.choice(env_commands) for env_commands in admissible_commands])
         else:
-            input_description, description_id_list = self.get_game_state_info(obs, infos)
-            # TODO: implement act method for simple DQN model.
-            preprocessed_commands = self.preprocess_commands(admissible_commands)
-            for description, preprocessed_commands, command_texts \
-                    in zip(input_description, preprocessed_commands, admissible_commands):
-                command_idx = self.get_command(description, preprocessed_commands)
-                actions.append(command_texts[command_idx])
+            with torch.no_grad():
+                input_description, description_id_list = self.get_game_state_info(obs, infos)
+                # TODO: implement act method for simple DQN model.
+                preprocessed_commands = self.preprocess_commands(admissible_commands)
+                for description, preprocessed_commands, command_texts \
+                        in zip(input_description, preprocessed_commands, admissible_commands):
+                    command_idx = self.get_command(description, preprocessed_commands)
+                    actions.append(command_texts[command_idx])
 
+        # Update experience replay memory
+        pass
+
+        # Update model
+        pass
+
+        if all(dones):
+            # Nothing to return if all environments terminated
+            return
+
+        return actions
 
     def update(self, transition):
         # Update network parameters
@@ -97,6 +111,7 @@ class CustomAgent:
             commands_tokens = [preproc(item, tokenizer=self.nlp) for item in commands_list]
             commands_ids = [_words_to_ids(tokens, self.word2id) for tokens in commands_tokens]
             commands_description = pad_sequences(commands_ids, maxlen=max_len(commands_ids)).astype('int32')
+            commands_description = to_pt(commands_description)
             preprocessed_commands.append(commands_description)
         return preprocessed_commands
 
@@ -168,7 +183,7 @@ class CustomAgent:
         request_infos = EnvInfos()
         request_infos.description = True
         request_infos.inventory = True
-        request_infos.entities = True; request_infos.verbs = True
+        request_infos.entities, request_infos.verbs = True, True
         request_infos.extras = ["recipe"]
         request_infos.admissible_commands = True
         return request_infos
