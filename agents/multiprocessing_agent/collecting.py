@@ -1,3 +1,4 @@
+import torch
 from logging import info
 
 import gym
@@ -18,9 +19,10 @@ def collect_experience(
     policy_net: QNet,
     log_dir,
 ):
-    writer = SummaryWriter(log_dir)
+    if log_dir is not None:
+        writer = SummaryWriter(log_dir)
     actor = BaseQlearningAgent(
-        net=target_net,
+        net=policy_net,
         experience_replay_buffer=buffer,
         params=train_params,
         eps_scheduler_params=eps_scheduler_params,
@@ -35,11 +37,7 @@ def collect_experience(
         name="training_par",
     )
     batch_size = train_params.pop("n_parallel_envs")
-    env_id = textworld.gym.make_batch(
-        env_id,
-        batch_size=batch_size,
-        parallel=False,
-    )
+    env_id = textworld.gym.make_batch(env_id, batch_size=batch_size, parallel=False)
     env = gym.make(env_id)
 
     global_step = 0
@@ -63,7 +61,12 @@ def collect_experience(
 
             while not all(dones):
                 steps = [step + int(not done) for step, done in zip(steps, dones)]
-                command = actor.act(obs, rewards, dones, infos)
+
+                infos["is_lost"] = [
+                    ("You lost!" in o if d else False) for o, d in zip(obs, dones)
+                ]
+                with torch.no_grad():
+                    command = actor.act(obs, rewards, dones, infos)
                 obs, cumulative_rewards, dones, infos = env.step(command)
 
                 rewards = [
@@ -71,10 +74,24 @@ def collect_experience(
                     for c_r, p_c_r in zip(cumulative_rewards, prev_cumulative_rewards)
                 ]
                 prev_cumulative_rewards = cumulative_rewards
+            actor.reset()
             global_step += 1
-            writer.add_scalar(
-                "train/avg_reward", numpy.mean(cumulative_rewards), global_step
-            )
-            writer.add_scalar(
-                "train/eps", actor.eps_scheduler.eps(actor.current_step), global_step
-            )
+            actor.eps_scheduler.increase_step()
+            if log_dir is not None:
+                writer.add_scalar(
+                    "train/avg_reward", numpy.mean(cumulative_rewards), global_step
+                )
+                writer.add_scalar(
+                    "train/avg_steps", numpy.mean(steps), global_step
+                )
+                writer.add_scalar("train/eps", actor.eps_scheduler.eps, global_step)
+                writer.add_histogram(
+                    "train/actor_target_net_weights",
+                    target_net.hidden_to_scores.weight.clone().detach().cpu().numpy(),
+                    global_step,
+                )
+                writer.add_histogram(
+                    "train/actor_policy_net_weights",
+                    policy_net.hidden_to_scores.weight.clone().detach().cpu().numpy(),
+                    global_step,
+                )
