@@ -33,7 +33,8 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
     train_dir = Path(args.games)
-    games = [str(f) for f in train_dir.iterdir() if f.is_file() and f.suffix == ".ulx"]
+    games = [str(f) for f in train_dir.iterdir() if f.is_file() and f.suffix == ".ulx"][:1]
+    print(games)
     params = Params.from_file("configs/config.jsonnet")
     train_params = params.pop("training")
 
@@ -57,7 +58,7 @@ if __name__ == "__main__":
     actor_log_dir, learner_log_dir = log_dirs
 
     queue = Queue(maxsize=500_000)
-    replay = BinaryPrioritizeReplayMemory(capacity=500_000, priority_fraction=0.2)
+    replay = BinaryPrioritizeReplayMemory(capacity=500_000, priority_fraction=0.5)
     processes = []
     collecting_process = mp.Process(
         target=collect_experience,
