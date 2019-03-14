@@ -6,7 +6,7 @@ from typing import List, Dict, Any, Optional
 import torch
 from pytorch_pretrained_bert import BertModel, BertTokenizer
 from textworld import EnvInfos
-from torch.nn import Module
+from torch.nn import Module, LayerNorm
 import torch.nn as nn
 from torch.nn.utils.rnn import pad_sequence
 
@@ -32,29 +32,39 @@ class QNet(Module):
         # TODO: probably need recurrent nets here
         self.obs_to_hidden = nn.Linear(self.embedding_size, self.hidden_size)
         self.actions_to_hidden = nn.Linear(self.embedding_size, self.hidden_size)
-        self.hidden_to_scores = nn.Linear(self.hidden_size, 1)
 
-        self.lrelu = nn.LeakyReLU()
+        self.hidden_to_hidden = nn.Linear(self.hidden_size, self.hidden_size // 2)
+
+        self.hidden_to_scores = nn.Linear(self.hidden_size // 2, 1)
+
+        self.state_layer_norm = LayerNorm(self.hidden_size)
+        self.action_layer_norm = LayerNorm(self.hidden_size)
+        self.hidden_layer_norm = LayerNorm(self.hidden_size // 2)
+
+        self.lrelu = nn.LeakyReLU(0.2)
 
         self.device = device
 
     # TODO: use receipt
     def forward(self, state_batch, actions_batch):
         observations, description, inventory = list(zip(*state_batch))
-        embedded_observations = self.embed_observations(
-            observations, description=description, inventory=inventory
-        )
+        # TODO: memory issues, how to deal?
+        with torch.no_grad():
+            embedded_observations = self.embed_observations(
+                observations, description=description, inventory=inventory
+            )
         q_values = []
         for obs, act in zip(embedded_observations, actions_batch):
 
             if isinstance(act, str):
                 act = [act]
-
-            embedded_actions = self.embed_actions(act)
-            obs = self.obs_to_hidden(obs)
-            actions = self.actions_to_hidden(embedded_actions)
-            final_state = self.lrelu(obs * actions)
-            q_values.append(self.hidden_to_scores(final_state))
+            with torch.no_grad():
+                embedded_actions = self.embed_actions(act)
+            obs = self.lrelu(self.obs_to_hidden(obs))
+            actions = self.lrelu(self.actions_to_hidden(embedded_actions))
+            final_state = self.state_layer_norm(obs) * self.action_layer_norm(actions)
+            new_hidden_size = self.hidden_layer_norm(self.lrelu(self.hidden_to_hidden(final_state)))
+            q_values.append(self.hidden_to_scores(new_hidden_size))
         return q_values
 
     def embed_observations(self, observations: str, description, inventory):
@@ -80,23 +90,21 @@ class QNet(Module):
                 indexed_state_description, device=self.device
             )
             obs_idxs.append(indexed_state_description)
-        # TODO: fine-tune?
-        with torch.no_grad():
-            padded_idxs = pad_sequence(obs_idxs, batch_first=True)
-            _, state_repr = self.bert(padded_idxs)
+        padded_idxs = pad_sequence(obs_idxs, batch_first=True)
+        _, state_repr = self.bert(padded_idxs)
         return state_repr
 
     def embed_actions(self, actions):
         embedded_actions = []
-        with torch.no_grad():
-            for action in actions:
-                tokenzed_action = self.tokenizer.tokenize(f"[CLS] {action} [SEP]")
-                action_indices = torch.tensor(
-                    [self.tokenizer.convert_tokens_to_ids(tokenzed_action)],
-                    device=self.device,
-                )
-                _, action_embedding = self.bert(action_indices)
-                embedded_actions.append(action_embedding)
+        # with torch.no_grad():
+        for action in actions:
+            tokenzed_action = self.tokenizer.tokenize(f"[CLS] {action} [SEP]")
+            action_indices = torch.tensor(
+                [self.tokenizer.convert_tokens_to_ids(tokenzed_action)],
+                device=self.device,
+            )
+            _, action_embedding = self.bert(action_indices)
+            embedded_actions.append(action_embedding)
         return torch.cat(embedded_actions)
 
 
@@ -220,7 +228,7 @@ class BaseQlearningAgent:
         # [You can insert code here.]
 
     def _end_episode(
-        self, obs: List[str], scores: List[int], infos: Dict[str, List[Any]]
+        self
     ) -> None:
         """
         Tell the agent the episode has terminated.
@@ -233,7 +241,11 @@ class BaseQlearningAgent:
         self._episode_has_started = False
         self.prev_actions = None
         self.prev_states = None
+        self.already_dones = None
         # [You can insert code here.]
+
+    def reset(self):
+        return self._end_episode()
 
     def act(
         self,
@@ -245,9 +257,10 @@ class BaseQlearningAgent:
         batch_admissible_commands = infos["admissible_commands"]
 
         # TODO: hzhz
-        if random.random() < self.eps_scheduler.eps(self.current_step):
+        if random.random() < self.eps_scheduler.eps:
             actions = [random.choice(adm_com) for adm_com in batch_admissible_commands]
         else:
+            self.net.eval()
             q_values = self.net(
                 tuple(zip(observations, infos["description"], infos["inventory"])),
                 batch_admissible_commands,
@@ -263,12 +276,13 @@ class BaseQlearningAgent:
             tuple(zip(observations, infos["description"], infos["inventory"])),
             rewards,
             dones,
+            infos["is_lost"]
         )
         self.current_step += 1
         return actions
 
     def update_experience_replay_buffer(
-        self, actions, batch_allowed_actions, observations, rewards, dones
+        self, actions, batch_allowed_actions, observations, rewards, dones, is_lost
     ):
         if self.prev_actions:
             for (
@@ -279,6 +293,7 @@ class BaseQlearningAgent:
                 done,
                 next_state,
                 already_done,
+                game_lost
             ) in zip(
                 self.prev_states,
                 self.prev_actions,
@@ -287,14 +302,21 @@ class BaseQlearningAgent:
                 dones,
                 observations,
                 self.already_dones,
+                is_lost
             ):
                 if not already_done:
+                    reward = float(reward)
+                    if done:
+                        if game_lost:
+                            reward = -1.0
+                        else:
+                            reward = 2.0
                     self.experience_replay_buffer.put(
                         Transition(
                             previous_state=previous_state,
                             action=action,
                             allowed_actions=allowed_actions,
-                            reward=float(reward),
+                            reward=reward,
                             done=done,
                             next_state=next_state,
                         )
