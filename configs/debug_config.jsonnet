@@ -2,13 +2,13 @@
 training: {
     # actor params
     n_epochs_collection: 1,
-    n_parallel_envs: 2,
-    use_separate_process_envs: false,
-    actor_device: "cuda",
-    target_net_update_freq: 100,
+    n_parallel_envs: 3,
+    use_separate_process_envs: true,
+    actor_device: "cuda:5",
+    target_net_update_freq: 10,
     # learner params
-    learner_device: "cuda",
-    batch_size: 16,
+    learner_device: "cuda:5",
+    batch_size: 64,
     lr: 1e-3,
     gamma: 0.95,
     max_steps_per_episode: 100,
@@ -17,11 +17,12 @@ training: {
     },
 network: {
     embedding_size: 768,
-    hidden_size: 1024
+    hidden_size: 30
     },
 epsilon: {
-    init_value: 0.9,
+    init_eps: 1.0,
+    min_eps: 0.05,
     gamma: 0.95,
-    step_size: 100
+    step_size: 5
     }
 }
