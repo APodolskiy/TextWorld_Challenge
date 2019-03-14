@@ -15,7 +15,7 @@ if __name__ == "__main__":
         str(f)
         for f in Path("games/train_sample").iterdir()
         if f.is_file() and f.suffix == ".ulx"
-    ]
+    ][:1]
     params = Params.from_file("configs/debug_config.jsonnet")
     actor_device = params["training"].pop("actor_device")
     my_net = QNet(params.get("network"), actor_device).to(actor_device)
@@ -29,7 +29,7 @@ if __name__ == "__main__":
         policy_net=my_net,
         log_dir=None
     )
-    replay_buffer = BinaryPrioritizeReplayMemory(capacity=500000, priority_fraction=0.2)
+    replay_buffer = BinaryPrioritizeReplayMemory(capacity=500000, priority_fraction=0.5)
     learn(
         policy_net=my_net,
         target_net=my_net,
