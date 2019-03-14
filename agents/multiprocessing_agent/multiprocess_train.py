@@ -1,6 +1,7 @@
 import argparse
 import logging
 from multiprocessing import Queue
+from os.path import exists
 from pathlib import Path
 from queue import Empty
 from shutil import rmtree
@@ -11,7 +12,7 @@ from agents.multiprocessing_agent.collecting import collect_experience
 from agents.multiprocessing_agent.custom_agent import QNet
 from agents.multiprocessing_agent.learning import learn
 from agents.utils.params import Params
-from agents.utils.replay import ExperienceReplay
+from agents.utils.replay import BinaryPrioritizeReplayMemory
 
 logging.basicConfig(level=logging.INFO)
 
@@ -47,11 +48,16 @@ if __name__ == "__main__":
     target_net.share_memory()
 
     # TODO: change this
-    log_dir = "runs/"
-    rmtree(log_dir)
 
-    queue = Queue(maxsize=100_000)
-    replay = ExperienceReplay()
+    log_dirs = ["runs/actor_run", "runs/learner_run"]
+    for log_dir in log_dirs:
+        if exists(log_dir):
+            rmtree(log_dir)
+        Path(log_dir).mkdir(parents=True)
+    actor_log_dir, learner_log_dir = log_dirs
+
+    queue = Queue(maxsize=500_000)
+    replay = BinaryPrioritizeReplayMemory(capacity=500_000, priority_fraction=0.2)
     processes = []
     collecting_process = mp.Process(
         target=collect_experience,
@@ -62,21 +68,19 @@ if __name__ == "__main__":
             "eps_scheduler_params": params.pop("epsilon"),
             "target_net": target_net,
             "policy_net": policy_net,
-            "log_dir": log_dir
+            "log_dir": actor_log_dir
         },
     )
-
-    exp_replay = ExperienceReplay()
 
     training_process = mp.Process(
         target=learn,
         kwargs={
             "policy_net": policy_net,
             "target_net": target_net,
-            "replay_buffer": exp_replay,
+            "replay_buffer": replay,
             "queue": queue,
             "params": train_params,
-            "log_dir": log_dir
+            "log_dir": learner_log_dir
         },
     )
 
