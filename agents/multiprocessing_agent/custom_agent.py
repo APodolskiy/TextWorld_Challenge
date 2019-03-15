@@ -4,14 +4,16 @@ from multiprocessing import Queue
 from typing import List, Dict, Any, Optional
 
 import torch
+import torch.nn as nn
 from pytorch_pretrained_bert import BertModel, BertTokenizer
 from textworld import EnvInfos
 from torch.nn import Module, LayerNorm
-import torch.nn as nn
 from torch.nn.utils.rnn import pad_sequence
 
 from agents.utils.eps_scheduler import EpsScheduler
 from agents.utils.params import Params
+
+State = namedtuple("State", ("description", "feedback", "inventory"))
 
 Transition = namedtuple(
     "Transition",
@@ -63,7 +65,9 @@ class QNet(Module):
             obs = self.lrelu(self.obs_to_hidden(obs))
             actions = self.lrelu(self.actions_to_hidden(embedded_actions))
             final_state = self.state_layer_norm(obs) * self.action_layer_norm(actions)
-            new_hidden_size = self.hidden_layer_norm(self.lrelu(self.hidden_to_hidden(final_state)))
+            new_hidden_size = self.hidden_layer_norm(
+                self.lrelu(self.hidden_to_hidden(final_state))
+            )
             q_values.append(self.hidden_to_scores(new_hidden_size))
         return q_values
 
@@ -123,16 +127,11 @@ class BaseQlearningAgent:
         self._initialized = False
         self._episode_has_started = False
         self.max_steps_per_episode = params.pop("max_steps_per_episode")
-
         self.experience_replay_buffer = experience_replay_buffer
-
         self.net = net
-
         self.eps_scheduler = EpsScheduler(eps_scheduler_params)
-
         self.current_step = 0
         self.training = False
-
         self.prev_actions = None
         self.prev_states = None
         self.already_dones = None
@@ -227,9 +226,7 @@ class BaseQlearningAgent:
 
         # [You can insert code here.]
 
-    def _end_episode(
-        self
-    ) -> None:
+    def _end_episode(self) -> None:
         """
         Tell the agent the episode has terminated.
 
@@ -255,54 +252,56 @@ class BaseQlearningAgent:
         infos: Dict[str, List[Any]],
     ):
         batch_admissible_commands = infos["admissible_commands"]
-
+        states = [
+            State(description=description, feedback=obs, inventory=inventory)
+            for description, obs, inventory in zip(
+                infos["description"], observations, infos["inventory"]
+            )
+        ]
         # TODO: hzhz
         if random.random() < self.eps_scheduler.eps:
             actions = [random.choice(adm_com) for adm_com in batch_admissible_commands]
         else:
             self.net.eval()
-            q_values = self.net(
-                tuple(zip(observations, infos["description"], infos["inventory"])),
-                batch_admissible_commands,
-            )
+            q_values = self.net(states, batch_admissible_commands)
             selected_idxs = [q_val.argmax().item() for q_val in q_values]
             actions = [
                 acts[idxs]
                 for acts, idxs in zip(batch_admissible_commands, selected_idxs)
             ]
         self.update_experience_replay_buffer(
-            actions,
-            batch_admissible_commands,
-            tuple(zip(observations, infos["description"], infos["inventory"])),
-            rewards,
-            dones,
-            infos["is_lost"]
+            next_states=states,
+            actions=actions,
+            batch_admissible_commands=batch_admissible_commands,
+            rewards=rewards,
+            dones=dones,
+            is_lost=infos["is_lost"],
         )
         self.current_step += 1
         return actions
 
     def update_experience_replay_buffer(
-        self, actions, batch_allowed_actions, observations, rewards, dones, is_lost
+        self, next_states, actions, batch_admissible_commands, rewards, dones, is_lost
     ):
         if self.prev_actions:
             for (
                 previous_state,
+                next_state,
                 action,
-                allowed_actions,
+                admissible_commands,
                 reward,
                 done,
-                next_state,
                 already_done,
-                game_lost
+                game_lost,
             ) in zip(
                 self.prev_states,
+                next_states,
                 self.prev_actions,
-                batch_allowed_actions,
+                batch_admissible_commands,
                 rewards,
                 dones,
-                observations,
                 self.already_dones,
-                is_lost
+                is_lost,
             ):
                 if not already_done:
                     reward = float(reward)
@@ -314,14 +313,14 @@ class BaseQlearningAgent:
                     self.experience_replay_buffer.put(
                         Transition(
                             previous_state=previous_state,
+                            next_state=next_state,
                             action=action,
-                            allowed_actions=allowed_actions,
+                            allowed_actions=admissible_commands,
                             reward=reward,
                             done=done,
-                            next_state=next_state,
                         )
                     )
 
         self.prev_actions = actions
-        self.prev_states = observations
+        self.prev_states = next_states
         self.already_dones = dones
