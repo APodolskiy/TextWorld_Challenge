@@ -50,14 +50,12 @@ def learn(
                 policy_net(batch.previous_state, batch.action)
             )
 
-            non_terminal_idxs = ~array(batch.done)
+            non_terminal_idxs = (~array(batch.done)).nonzero()[0]
             next_state_values = torch.zeros(len(batch.reward), device=policy_net.device)
 
-            next_non_final_states = [
-                batch.next_state[idx] for idx in non_terminal_idxs if idx
-            ]
+            next_non_final_states = [batch.next_state[idx] for idx in non_terminal_idxs]
             next_non_final_allowed_actions = [
-                batch.allowed_actions[idx] for idx in non_terminal_idxs if idx
+                batch.allowed_actions[idx] for idx in non_terminal_idxs
             ]
             target_net.eval()
             with torch.no_grad():
@@ -65,11 +63,7 @@ def learn(
                     next_non_final_states, next_non_final_allowed_actions
                 )
 
-            tensor_indices = torch.tensor(
-                tuple(non_terminal_idxs), dtype=torch.uint8, device=policy_net.device
-            )
-
-            next_state_values[tensor_indices] = torch.tensor(
+            next_state_values[non_terminal_idxs] = torch.tensor(
                 [q_values.max().item() for q_values in next_state_q_values],
                 device=policy_net.device,
             )
@@ -87,7 +81,6 @@ def learn(
             t2 = expected_values.cpu().detach().numpy().flatten()
             print(f"Predicted: {t1[::4]}")
             print(f"Should be: {t2[::4]}")
-
 
             if log_dir is not None:
                 if learning_step % saving_freq == 0:
