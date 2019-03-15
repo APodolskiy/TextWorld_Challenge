@@ -40,10 +40,23 @@ class CustomAgent:
         self.act_steps = 0
 
         self._episode_started = False
+        self.previous_actions: List[str] = []
+        self.scores: List[int] = []
+        self.dones: List[int] = []
 
     def act(self, obs: List[str], scores: List[int], dones: List[bool], infos: Dict[str, List[Any]]) -> List[str]:
         if not self._episode_started:
             self._init(obs, infos)
+
+        if self.mode == "eval":
+            return self.act_eval(obs, scores, dones, infos)
+
+        if self.current_step > 0:
+            # append scores / dones from previous step into memory
+            self.scores.append(scores)
+            self.dones.append(dones)
+            # compute previous step's rewards and masks
+            rewards_np, rewards, mask_np, mask = self.compute_reward()
 
         admissible_commands = infos["admissible_commands"]
         # Choose actions
@@ -60,6 +73,7 @@ class CustomAgent:
                     command_idx = self.get_command(description, preprocessed_commands)
                     actions.append(command_texts[command_idx])
 
+        self.previous_actions = actions
         # Update experience replay memory
         pass
 
@@ -71,6 +85,9 @@ class CustomAgent:
             return
 
         return actions
+
+    def act_eval(self, obs: List[str], scores: List[int], dones: List[bool], infos: Dict[str, List[Any]]) -> List[str]:
+        pass
 
     def update(self, transition):
         # Update network parameters
@@ -117,6 +134,9 @@ class CustomAgent:
 
     def _init(self, obs: List[str], infos: Dict[str, List[Any]]) -> None:
         self._episode_started = True
+        self.scores = []
+        self.dones = []
+        self.prev_actions = ["" for _ in range(len(obs))]
 
     def _load_vocab(self, vocab_file: str) -> None:
         with open(vocab_file, "r") as fp:

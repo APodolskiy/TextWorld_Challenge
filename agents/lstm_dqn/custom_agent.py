@@ -546,7 +546,7 @@ class CustomAgent:
         mask = np.array(mask, dtype='float32')
         mask_pt = to_pt(mask, self.use_cuda, type='float')
         # rewards returned by game engine are always accumulated value the
-        # agent have recieved. so the reward it gets in the current game step
+        # agent have received. so the reward it gets in the current game step
         # is the new value minus values at previous step.
         rewards = np.array(self.scores[-1], dtype='float32')  # batch
         if len(self.scores) > 1:
