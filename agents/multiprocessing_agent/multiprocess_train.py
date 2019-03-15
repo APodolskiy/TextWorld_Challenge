@@ -6,11 +6,13 @@ from pathlib import Path
 from queue import Empty
 from shutil import rmtree
 
+import spacy
 import torch.multiprocessing as mp
 
 from agents.multiprocessing_agent.collecting import collect_experience
 from agents.multiprocessing_agent.custom_agent import QNet
 from agents.multiprocessing_agent.learning import learn
+from agents.multiprocessing_agent.simple_net import SimpleNet
 from agents.utils.params import Params
 from agents.utils.replay import BinaryPrioritizeReplayMemory
 
@@ -40,11 +42,13 @@ if __name__ == "__main__":
 
     network_params = params.get("network")
     learner_device = train_params.pop("learner_device")
-    policy_net = QNet(network_params, device=learner_device).to(learner_device)
+
+    tok = spacy.load("en_core_web_sm").tokenizer
+    policy_net = SimpleNet(device=learner_device, tokenizer=tok).to(learner_device)
     policy_net.share_memory()
 
     actor_device = train_params.pop("actor_device")
-    target_net = QNet(network_params, device=actor_device).to(actor_device)
+    target_net = SimpleNet(device=actor_device, tokenizer=tok).to(actor_device)
     target_net.load_state_dict(policy_net.state_dict())
     target_net.share_memory()
 
