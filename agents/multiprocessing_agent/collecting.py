@@ -66,6 +66,10 @@ def collect_experience(
                 ]
                 with torch.no_grad():
                     command = actor.act(obs, rewards, dones, infos)
+                print(obs[0])
+                print(infos["description"][0])
+                print(command[0])
+                print("*" * 50)
                 obs, cumulative_rewards, dones, infos = env.step(command)
 
                 rewards = [
