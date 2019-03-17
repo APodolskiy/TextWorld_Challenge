@@ -131,20 +131,6 @@ class BinaryPrioritizeReplayMemory(AbstractReplayMemory):
         # position = (position + 1) % self.prior_capacity
         return position
 
-    # def _push_prior(self, transition: NamedTuple):
-    #     if len(self.prior_buffer) < self.prior_capacity:
-    #         self.prior_buffer.append(None)
-    #     self.prior_buffer[self.prior_position] = transition
-    #     self.prior_position = (self.prior_position + 1) % self.prior_capacity
-    #
-    # def _push_secondary(self, transition: NamedTuple):
-    #     if len(self.secondary_buffer) < self.secondary_capacity:
-    #         self.secondary_buffer.append(None)
-    #     self.secondary_buffer[self.secondary_position] = transition
-    #     self.secondary_position = (
-    #         self.secondary_position + 1
-    #     ) % self.secondary_capacity
-
     def sample(self, batch_size: int) -> List[NamedTuple]:
         if self.priority_fraction == 0.0:
             samples = random.sample(self.secondary_buffer, batch_size)
