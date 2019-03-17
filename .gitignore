@@ -103,6 +103,8 @@ venv.bak/
 # mypy
 .mypy_cache/
 
+/TextWorld-Coin-Collector/*
+
 
 games
 saved_models
