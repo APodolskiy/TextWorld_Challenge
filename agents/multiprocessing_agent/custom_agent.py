@@ -8,6 +8,7 @@ import torch.nn as nn
 from pytorch_pretrained_bert import BertModel, BertTokenizer
 from textworld import EnvInfos
 from torch.nn import Module, LayerNorm
+from torch.nn.functional import softmax
 from torch.nn.utils.rnn import pad_sequence
 
 from agents.utils.eps_scheduler import EpsScheduler
@@ -259,16 +260,20 @@ class BaseQlearningAgent:
             )
         ]
         # TODO: hzhz
-        if random.random() < self.eps_scheduler.eps:
-            actions = [random.choice(adm_com) for adm_com in batch_admissible_commands]
-        else:
-            self.net.eval()
-            q_values = self.net(states, batch_admissible_commands)
-            selected_idxs = [q_val.argmax().item() for q_val in q_values]
-            actions = [
-                acts[idxs]
-                for acts, idxs in zip(batch_admissible_commands, selected_idxs)
-            ]
+        # if random.random() < self.eps_scheduler.eps:
+        #     actions = [random.choice(adm_com) for adm_com in batch_admissible_commands]
+        # else:
+        #     self.net.eval()
+        #     q_values = self.net(states, batch_admissible_commands)
+        #     selected_idxs = [q_val.argmax().item() for q_val in q_values]
+        #
+        self.net.eval()
+        q_values = self.net(states, batch_admissible_commands)
+        selected_idxs = [softmax(q_val).multinomial(1).item() for q_val in q_values]
+        actions = [
+                    acts[idxs]
+                    for acts, idxs in zip(batch_admissible_commands, selected_idxs)
+                ]
         self.update_experience_replay_buffer(
             next_states=states,
             actions=actions,
