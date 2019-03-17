@@ -6,6 +6,7 @@ from typing import List
 
 from spacy.attrs import LEMMA, ORTH, POS
 from torch.nn import Module, Embedding, LSTM, Linear, GRU, LeakyReLU
+from torch.nn.functional import cosine_similarity
 from torch.nn.utils.rnn import pad_sequence, pack_padded_sequence
 
 from agents.multiprocessing_agent.custom_agent import Transition, State
@@ -42,9 +43,12 @@ class SimpleNet(Module):
         self.state_embedder = GRU(
             input_size=self.emb_dim, hidden_size=self.hidden_size, batch_first=True
         )
+
         self.action_embedder = GRU(
             batch_first=True, input_size=self.emb_dim, hidden_size=self.hidden_size
         )
+        self.state_to_hidden = Linear(self.hidden_size, self.hidden_size)
+        self.action_to_hidden = Linear(self.hidden_size, self.hidden_size)
 
         self.hidden_to_hidden = Linear(self.hidden_size, self.hidden_size)
         self.hidden_to_scores = Linear(self.hidden_size, 1)
@@ -99,9 +103,12 @@ class SimpleNet(Module):
         for s, actions in zip(state, actions_batch):
             _, act_state = self.action_embedder(actions)
             act_state = act_state.squeeze(0)
-            combined = s * act_state
-            hidden = self.lrelu(self.hidden_to_hidden(combined))
-            q_values.append(self.hidden_to_scores(hidden))
+            s_hidden = self.state_to_hidden(s)
+            act_hidden = self.action_to_hidden(act_state)
+            q_values.append(5 * cosine_similarity(s_hidden.unsqueeze(0), act_hidden, dim=1))
+            # combined = s_hidden * act_hidden
+            # hidden = self.lrelu(self.hidden_to_hidden(combined))
+            # q_values.append(self.hidden_to_scores(hidden))
 
         return q_values
 
@@ -128,7 +135,7 @@ class SimpleBowNet(Module):
         self.embedding = Embedding(
             self.vocab_size, self.emb_dim, padding_idx=self.pad_idx
         )
-        self.state_to_hidden = Linear(self.vocab_size, self.hidden_size)
+        self.state_to_hidden = Linear(self.vocab_size, self.hidden_size // 4)
         self.state_to_hidden2 = Linear(self.hidden_size, self.hidden_size // 2)
 
         self.actions_to_hidden = Linear(self.vocab_size, self.hidden_size)
@@ -151,7 +158,9 @@ class SimpleBowNet(Module):
         return indices
 
     def embed(self, idxs):
-        result = torch.zeros((len(idxs), self.vocab_size), dtype=torch.float32, device=self.device)
+        result = torch.zeros(
+            (len(idxs), self.vocab_size), dtype=torch.float32, device=self.device
+        )
         for i, idx in enumerate(idxs):
             for idx_ in idx:
                 result[i][idx_] = 1
@@ -174,19 +183,21 @@ class SimpleBowNet(Module):
             actions_batch.append(self.embed([self.vectorize(a) for a in state_actions]))
         q_values = []
         for state, actions in zip(state_batch, actions_batch):
-            state = self.lrelu(self.state_to_hidden(state))
-            state = self.lrelu(self.state_to_hidden2(state))
-            actions = self.lrelu(self.actions_to_hidden(actions))
-            actions = self.lrelu(self.actions_to_hidden2(actions))
-            combined = state * actions
-            hidden = self.lrelu(self.hidden_to_hidden(combined))
+            hidden = self.state_to_hidden(state + actions)
+            # state = self.lrelu(self.state_to_hidden(state))
+            # state = self.lrelu(self.state_to_hidden2(state))
+            # actions = self.lrelu(self.actions_to_hidden(actions))
+            # actions = self.lrelu(self.actions_to_hidden2(actions))
+            # combined = state * actions
+            # hidden = self.lrelu(self.hidden_to_hidden(combined))
             q_values.append(self.hidden_to_scores(hidden))
 
         return q_values
+
 
 if __name__ == "__main__":
     with open("transitions.pkl", "rb") as f:
         transitions: Transition = pickle.load(f)
     tokenizer = spacy.load("en_core_web_sm").tokenizer
-    net = SimpleBowNet(device="cpu", tokenizer=tokenizer)
+    net = SimpleNet(device="cpu", tokenizer=tokenizer)
     net(transitions.previous_state[:4], transitions.allowed_actions[:4])
