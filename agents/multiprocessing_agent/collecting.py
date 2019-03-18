@@ -5,17 +5,19 @@ import gym
 import numpy
 import textworld
 from tqdm import tqdm
-from agents.multiprocessing_agent.custom_agent import BaseQlearningAgent, QNet
+from agents.multiprocessing_agent.custom_agent import BaseQlearningAgent
+from agents.multiprocessing_agent.bert_net import QNet
 from test_submission import _validate_requested_infos
 from tensorboardX import SummaryWriter
 
 collecting_step = 1
 
+
 def collect_experience(
     game_files,
     buffer,
     train_params,
-    eps_scheduler_params,
+    eps_scheduler,
     target_net: QNet,
     policy_net: QNet,
     log_dir,
@@ -27,7 +29,7 @@ def collect_experience(
         net=policy_net,
         experience_replay_buffer=buffer,
         params=train_params,
-        eps_scheduler_params=eps_scheduler_params,
+        eps_scheduler=eps_scheduler,
     )
     requested_infos = actor.select_additional_infos()
     _validate_requested_infos(requested_infos)
@@ -39,7 +41,11 @@ def collect_experience(
         name="training_par",
     )
     batch_size = train_params.pop("n_parallel_envs")
-    env_id = textworld.gym.make_batch(env_id, batch_size=batch_size, parallel=False)
+    env_id = textworld.gym.make_batch(
+        env_id,
+        batch_size=batch_size,
+        parallel=train_params.pop("use_separate_process_envs"),
+    )
     env = gym.make(env_id)
 
     update_freq = train_params.pop("target_net_update_freq")
@@ -64,12 +70,14 @@ def collect_experience(
                 infos["is_lost"] = [
                     ("You lost!" in o if d else False) for o, d in zip(obs, dones)
                 ]
+                # TODO: only one game is supported
+                infos["gamefile"] = game_files[0]
                 with torch.no_grad():
                     command = actor.act(obs, rewards, dones, infos)
-                print(obs[0])
-                print(infos["description"][0])
-                print(command[0])
-                print("*" * 50)
+                # print(obs[0])
+                # print(infos["description"][0])
+                # print(command[0])
+                # print("*" * 50)
                 obs, cumulative_rewards, dones, infos = env.step(command)
 
                 rewards = [
@@ -83,9 +91,7 @@ def collect_experience(
                 writer.add_scalar(
                     "train/avg_reward", numpy.mean(cumulative_rewards), collecting_step
                 )
-                writer.add_scalar(
-                    "train/avg_steps", numpy.mean(steps), collecting_step
-                )
+                writer.add_scalar("train/avg_steps", numpy.mean(steps), collecting_step)
                 writer.add_scalar("train/eps", actor.eps_scheduler.eps, collecting_step)
                 writer.add_histogram(
                     "train/actor_target_net_weights",
