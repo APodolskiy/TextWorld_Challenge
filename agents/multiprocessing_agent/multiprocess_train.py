@@ -10,7 +10,7 @@ import spacy
 import torch.multiprocessing as mp
 
 from agents.multiprocessing_agent.collecting import collect_experience
-from agents.multiprocessing_agent.custom_agent import QNet
+from agents.multiprocessing_agent.bert_net import QNet
 from agents.multiprocessing_agent.learning import learn
 from agents.multiprocessing_agent.simple_net import SimpleNet
 from agents.utils.params import Params
