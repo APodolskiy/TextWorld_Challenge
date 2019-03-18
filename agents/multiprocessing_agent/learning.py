@@ -10,7 +10,8 @@ import torch
 from torch.nn.functional import smooth_l1_loss
 from torch.optim import Adam
 
-from agents.multiprocessing_agent.custom_agent import Transition, QNet
+from agents.multiprocessing_agent.custom_agent import Transition
+from agents.multiprocessing_agent.bert_net import QNet
 from agents.utils.replay import AbstractReplayMemory, BinaryPrioritizeReplayMemory
 
 learning_step = 1
@@ -69,6 +70,9 @@ def learn(
             )
             expected_values = (
                 torch.tensor(batch.reward, device=q_values_selected_actions.device)
+                + torch.tensor(
+                    batch.exploration_bonus, device=q_values_selected_actions.device
+                )
                 + gamma * next_state_values
             )
 
