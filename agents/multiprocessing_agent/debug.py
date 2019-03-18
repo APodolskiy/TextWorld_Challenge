@@ -11,8 +11,9 @@ import spacy
 from agents.multiprocessing_agent.collecting import collect_experience
 from agents.multiprocessing_agent.learning import learn
 from agents.multiprocessing_agent.simple_net import SimpleNet, SimpleBowNet
+from agents.utils.eps_scheduler import EpsScheduler
 from agents.utils.params import Params
-from agents.multiprocessing_agent.custom_agent import QNet
+from agents.multiprocessing_agent.bert_net import QNet
 from agents.utils.replay import BinaryPrioritizeReplayMemory
 
 logging.basicConfig(level=logging.INFO)
@@ -44,12 +45,12 @@ if __name__ == "__main__":
     if exists(log_dir):
         rmtree(log_dir)
         Path(log_dir).mkdir(parents=True)
-
+    eps_scheduler = EpsScheduler(eps_params)
     for _ in range(1000):
         collect_experience(
             buffer=queue,
             train_params=train_params.duplicate(),
-            eps_scheduler_params=eps_params.duplicate(),
+            eps_scheduler=eps_scheduler,
             game_files=games,
             target_net=target_net,
             policy_net=my_net,
