@@ -62,7 +62,8 @@ class BaseQlearningAgent:
         self.training = False
         self.prev_actions = None
         self.prev_states = None
-        self.already_dones = [False for _ in range(self.batch_size)]
+        self.prev_not_done_idxs = None
+        # self.already_dones = [False for _ in range(self.batch_size)]
 
     def train(self) -> None:
         """ Tell the agent it is in training mode. """
@@ -166,7 +167,8 @@ class BaseQlearningAgent:
         self._episode_has_started = False
         self.prev_actions = None
         self.prev_states = None
-        self.already_dones = [False for _ in range(self.batch_size)]
+        # self.already_dones = [False for _ in range(self.batch_size)]
+        self.prev_not_done_idxs = None
         self.visited_states = defaultdict(set)
         # [You can insert code here.]
 
@@ -180,43 +182,41 @@ class BaseQlearningAgent:
         dones: List[bool],
         infos: Dict[str, List[Any]],
     ):
+        self.gamefile = infos["gamefile"]
         actions = ["pass" for _ in range(len(observations))]
         not_done_idxs = idx_select(
-            list(range(self.batch_size)), self.already_dones, reversed_indices=True
+            list(range(self.batch_size)), dones, reversed_indices=True
         )
-        self.gamefile = infos["gamefile"]
-        batch_admissible_commands = idx_select(
-            infos["admissible_commands"], not_done_idxs
-        )
-        states = idx_select(
-            [
-                State(description=description, feedback=obs, inventory=inventory)
-                for description, obs, inventory in zip(
-                    infos["description"], observations, infos["inventory"]
-                )
-            ],
-            not_done_idxs,
-        )
+        batch_admissible_commands = infos["admissible_commands"]
+        commands_not_finished = idx_select(batch_admissible_commands, not_done_idxs)
+        states = [
+            State(description=description, feedback=obs, inventory=inventory)
+            for description, obs, inventory in zip(
+                infos["description"], observations, infos["inventory"]
+            )
+        ]
+
         # TODO: hzhz
         if random.random() < self.eps_scheduler.eps:
             selected_action_idxs = [
-                random.choice(len(adm_com)) for adm_com in batch_admissible_commands
+                random.choice(len(adm_com)) for adm_com in commands_not_finished
             ]
         else:
             self.net.eval()
-            q_values = self.net(states, batch_admissible_commands)
+            q_values = self.net(idx_select(states, not_done_idxs), commands_not_finished)
             selected_action_idxs = [q_val.argmax().item() for q_val in q_values]
 
         # self.net.eval()
         # q_values = self.net(states, batch_admissible_commands)
         # selected_action_idxs = [softmax(q_val, dim=1).multinomial(1).item() for q_val in q_values]
         for not_done_idx, adm_com, sel_act_idx in zip(
-            not_done_idxs, batch_admissible_commands, selected_action_idxs
+            not_done_idxs, commands_not_finished, selected_action_idxs
         ):
             actions[not_done_idx] = adm_com[sel_act_idx]
         self.update_experience_replay_buffer(
+            not_done_idxs=not_done_idxs,
             next_states=states,
-            actions=[a for a in actions if a != "pass"],
+            actions=actions,
             batch_admissible_commands=batch_admissible_commands,
             rewards=rewards,
             dones=dones,
@@ -226,10 +226,17 @@ class BaseQlearningAgent:
         return actions
 
     def update_experience_replay_buffer(
-        self, next_states, actions, batch_admissible_commands, rewards, dones, is_lost
+        self,
+        not_done_idxs,
+        next_states,
+        actions,
+        batch_admissible_commands,
+        rewards,
+        dones,
+        is_lost,
     ):
-        assert len(actions) == len(next_states)
         if self.prev_actions:
+            # assert len(actions) == len(next_states) == len(self.prev_states)
             for (
                 previous_state,
                 next_state,
@@ -239,15 +246,16 @@ class BaseQlearningAgent:
                 done,
                 game_lost,
             ) in zip(
-                self.prev_states,
-                next_states,
-                self.prev_actions,
-                batch_admissible_commands,
-                rewards,
-                dones,
-                is_lost,
+                idx_select(self.prev_states, self.prev_not_done_idxs),
+                idx_select(next_states, self.prev_not_done_idxs),
+                idx_select(self.prev_actions, self.prev_not_done_idxs),
+                idx_select(batch_admissible_commands, self.prev_not_done_idxs),
+                idx_select(rewards, self.prev_not_done_idxs),
+                idx_select(dones, self.prev_not_done_idxs),
+                idx_select(is_lost, self.prev_not_done_idxs),
             ):
                 assert action != "pass"
+                # if not already_done:
                 desc_inventory = next_state.description + next_state.inventory
                 reward, exploration_bonus = self.calculate_rewards(
                     reward=reward, game_lost=game_lost, done=done, state=desc_inventory
@@ -267,7 +275,8 @@ class BaseQlearningAgent:
 
         self.prev_actions = actions
         self.prev_states = next_states
-        self.already_dones = dones
+        self.prev_not_done_idxs = not_done_idxs
+        # self.already_dones = dones
 
     def calculate_rewards(self, reward: int, game_lost: bool, done: bool, state: str):
         reward = float(reward)
