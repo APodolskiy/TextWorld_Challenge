@@ -105,10 +105,8 @@ class SimpleNet(Module):
             act_state = act_state.squeeze(0)
             s_hidden = self.state_to_hidden(s)
             act_hidden = self.action_to_hidden(act_state)
+
             q_values.append(5 * cosine_similarity(s_hidden.unsqueeze(0), act_hidden, dim=1))
-            # combined = s_hidden * act_hidden
-            # hidden = self.lrelu(self.hidden_to_hidden(combined))
-            # q_values.append(self.hidden_to_scores(hidden))
 
         return q_values
 
