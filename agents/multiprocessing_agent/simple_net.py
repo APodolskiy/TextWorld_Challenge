@@ -84,14 +84,16 @@ class SimpleNet(Module):
                 f" {self.join_symbol} ".join([desc, obs, inventory, state.prev_action])
             )
             state_batch.append(state_idxs)
-        state_embs, _ = self.embed(state_batch)
+        state_embs, orig_state_idxs = self.embed(state_batch)
 
         actions_batch = []
+        actions_idxs_batch = []
         for state_actions in actions:
             if isinstance(state_actions, str):
                 state_actions = [state_actions]
-            act_embs, _ = self.embed([self.vectorize(a) for a in state_actions])
+            act_embs, act_idxs = self.embed([self.vectorize(a) for a in state_actions])
             actions_batch.append(act_embs)
+            actions_idxs_batch.append(act_idxs)
 
         seq_states, state = self.state_embedder(state_embs)
 
@@ -103,10 +105,12 @@ class SimpleNet(Module):
 
         q_values = []
         state = state.squeeze(0)
-        for s, actions in zip(state, actions_batch):
+        state = state[orig_state_idxs]
+        for s, actions, act_idxs in zip(state, actions_batch, actions_idxs_batch):
 
             _, act_state = self.action_embedder(actions)
             act_state = act_state.squeeze(0)
+            act_state = act_state[act_idxs]
             s_hidden = self.state_to_hidden(s)
 
             # s_hidden = self.state_memory(s_hidden.unsqueeze(0), hidden)
@@ -134,7 +138,7 @@ class SimpleNet(Module):
         assert all(
             [
                 torch.equal(
-                    numpy.array(sorted_data_batch)[orig_order.numpy()][i], data_batch[i]
+                    numpy.array(sorted_data_batch,   dtype=object)[orig_order.numpy()][i], data_batch[i]
                 )
                 for i in range(len(data_batch))
             ]
