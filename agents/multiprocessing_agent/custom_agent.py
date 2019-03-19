@@ -205,10 +205,13 @@ class BaseQlearningAgent:
             ]
         else:
             self.net.eval()
-            q_values = self.net(
-                idx_select(states, not_done_idxs), commands_not_finished
-            )
-            selected_action_idxs = [q_val.argmax().item() for q_val in q_values]
+            if not_done_idxs:
+                q_values = self.net(
+                    idx_select(states, not_done_idxs), commands_not_finished
+                )
+                selected_action_idxs = [q_val.argmax().item() for q_val in q_values]
+            else:
+                selected_action_idxs = []
 
         # self.net.eval()
         # q_values = self.net(states, batch_admissible_commands)
