@@ -33,7 +33,6 @@ def collect_experience(
         eps_scheduler=eps_scheduler,
     )
     requested_infos = actor.select_additional_infos()
-    _validate_requested_infos(requested_infos)
 
     env_id = textworld.gym.register_games(
         game_files,
