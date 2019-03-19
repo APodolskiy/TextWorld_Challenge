@@ -11,9 +11,13 @@ from textworld import EnvInfos
 
 from agents.multiprocessing_agent.custom_agent import QNet, State
 from agents.multiprocessing_agent.simple_net import SimpleNet
+from agents.multiprocessing_agent.utils import clean_text
 
 required_infos = EnvInfos(
-    description=True, inventory=True, extras=["recipe", "walkthrough"], admissible_commands=True
+    description=True,
+    inventory=True,
+    extras=["recipe", "walkthrough"],
+    admissible_commands=True,
 )
 
 
@@ -29,7 +33,12 @@ def check_agent(game_file, agent: QNet):
 
     q_values = agent(
         [
-            State(inventory=inv, description=desc, feedback=o, prev_action="none")
+            State(
+                inventory=clean_text(inv, "inventory"),
+                description=clean_text(desc, "description"),
+                feedback=clean_text(o, "feedback"),
+                prev_action="none",
+            )
             for o, desc, inv in zip(obs, infos["description"], infos["inventory"])
         ],
         adm_commands,
@@ -38,16 +47,19 @@ def check_agent(game_file, agent: QNet):
 
     for command, q_value in zip(adm_commands[0], q_values[0]):
         print(f"{command:35}{'*' if q_value == q_max else ''} -> {q_value.item()}")
-    for _ in range(10):
+    for _ in range(100):
         commands = [adm_commands[0][q_values[0].argmax().item()]]
-        obs, cumulative_rewards, dones, infos = env.step(
-            commands
-        )
+        obs, cumulative_rewards, dones, infos = env.step(commands)
         print(obs)
         adm_commands = infos["admissible_commands"]
         q_values = agent(
             [
-                State(inventory=inv, description=desc, feedback=o, prev_action=commands[0])
+                State(
+                    inventory=clean_text(inv, "inventory"),
+                    description=clean_text(desc, "description"),
+                    feedback=clean_text(o, "feedback"),
+                    prev_action=commands[0],
+                )
                 for o, desc, inv in zip(obs, infos["description"], infos["inventory"])
             ],
             adm_commands,
@@ -65,7 +77,5 @@ if __name__ == "__main__":
     params = Params.from_file("configs/debug_config.jsonnet")
     agent = SimpleNet(device="cpu", tokenizer=spacy.load("en_core_web_sm").tokenizer)
     agent.load_state_dict(torch.load(params["training"]["model_path"]))
-    game_file = (
-        f"games/train_sample/{args.game_file}"
-    )
+    game_file = f"games/train_sample/{args.game_file}"
     check_agent(game_file, agent)
