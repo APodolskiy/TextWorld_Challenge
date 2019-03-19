@@ -39,8 +39,9 @@ def learn(
         samples = 0
         while samples < max_samples:
             try:
-                transition = queue.get(True, 1.0)
-                replay_buffer.push(transition, is_prior=transition.reward != 0)
+                transitions = queue.get(True, 1.0)
+                for tr in transitions:
+                    replay_buffer.push(tr, is_prior=tr.reward > 0)
                 samples += 1
             except Empty:
                 break
