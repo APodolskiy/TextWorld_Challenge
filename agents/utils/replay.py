@@ -107,10 +107,10 @@ class PrioritizedReplayMemory(AbstractReplayMemory):
 class BinaryPrioritizeReplayMemory(AbstractReplayMemory):
     def __init__(self, capacity: int = 100_000, priority_fraction: float = 0.0):
         super(BinaryPrioritizeReplayMemory, self).__init__(capacity=capacity)
-        self.prior_buffer = {}
+        self.prior_buffer = []
         self.prior_position = 0
         self.prior_capacity = int(self.capacity * priority_fraction)
-        self.secondary_buffer = {}
+        self.secondary_buffer = []
         self.secondary_position = 0
         self.secondary_capacity = self.capacity - self.prior_capacity
         self.priority_fraction = priority_fraction
@@ -124,11 +124,10 @@ class BinaryPrioritizeReplayMemory(AbstractReplayMemory):
             self.secondary_position = self._push(transition, self.secondary_buffer, self.secondary_position)
 
     def _push(self, transition: Transition, buffer, position):
-        # if len(buffer) < self.prior_capacity:
-        #     buffer.append(None)
-        buffer[(transition.previous_state, transition.action)] = transition
-        # buffer[position] = transition
-        # position = (position + 1) % self.prior_capacity
+        if len(buffer) < self.prior_capacity:
+            buffer.append(None)
+        buffer[position] = transition
+        position = (position + 1) % self.prior_capacity
         return position
 
     def sample(self, batch_size: int) -> List[NamedTuple]:
@@ -139,8 +138,8 @@ class BinaryPrioritizeReplayMemory(AbstractReplayMemory):
                 int(batch_size * self.priority_fraction), len(self.prior_buffer)
             )
             secondary_size = min(batch_size - prior_size, len(self.secondary_buffer))
-            prior_samples = random.sample(list(self.prior_buffer.values()), prior_size)
-            secondary_samples = random.sample(list(self.secondary_buffer.values()), secondary_size)
+            prior_samples = random.sample(self.prior_buffer, prior_size)
+            secondary_samples = random.sample(self.secondary_buffer, secondary_size)
             samples = prior_samples + secondary_samples
             # random.shuffle(samples)
             if len(samples) != batch_size:
