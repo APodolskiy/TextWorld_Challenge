@@ -36,7 +36,11 @@ if __name__ == "__main__":
     target_net.load_state_dict(my_net.state_dict())
     queue = Queue()
 
-    replay_buffer = BinaryPrioritizeReplayMemory(capacity=500000, priority_fraction=0.5)
+    replay_memory_params = params.pop("replay_memory")
+    replay_buffer = BinaryPrioritizeReplayMemory(
+        capacity=replay_memory_params.pop("capacity"),
+        priority_fraction=replay_memory_params.pop("priority_fraction"),
+    )
 
     train_params = params.pop("training")
     eps_params = params.pop("epsilon")

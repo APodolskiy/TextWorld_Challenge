@@ -13,7 +13,7 @@ training: {
     gamma: 0.95,
     max_steps_per_episode: 200,
     max_samples: 100,
-    n_learning_steps: 10,
+    n_learning_steps: 35,
     saving_freq: 10,
     model_path: "debug_saved_model.pth"
     },
@@ -26,5 +26,9 @@ epsilon: {
     min_eps: 0.05,
     gamma: 0.95,
     step_size: 5
+    },
+replay_memory : {
+    capacity: 500000,
+    priority_fraction: 0.2
     }
 }
