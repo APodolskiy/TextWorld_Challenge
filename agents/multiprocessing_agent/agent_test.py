@@ -1,3 +1,5 @@
+from argparse import ArgumentParser
+
 import spacy
 
 import torch
@@ -55,11 +57,13 @@ def check_agent(game_file, agent: QNet):
 
 
 if __name__ == "__main__":
+    parser = ArgumentParser()
+    parser.add_argument("game_file", type=str)
+    args = parser.parse_args()
     params = Params.from_file("configs/debug_config.jsonnet")
-    # agent = SimpleNet(params.get("network"), "cpu")
     agent = SimpleNet(device="cpu", tokenizer=spacy.load("en_core_web_sm").tokenizer)
     agent.load_state_dict(torch.load(params["training"]["model_path"]))
     game_file = (
-        "games/train_sample/tw-cooking-recipe1+cut+drop+go9-oW8msba8TGYoC6Pl.ulx"
+        f"games/train_sample/{args.game_file}"
     )
     check_agent(game_file, agent)
