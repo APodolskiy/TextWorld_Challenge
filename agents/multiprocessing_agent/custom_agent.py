@@ -6,7 +6,7 @@ from typing import List, Dict, Any, Optional, Tuple
 from textworld import EnvInfos
 
 from agents.multiprocessing_agent.bert_net import QNet
-from agents.utils.eps_scheduler import EpsScheduler
+from agents.multiprocessing_agent.utils import clean_text
 from agents.utils.params import Params
 
 State = namedtuple("State", ("description", "feedback", "inventory"))
@@ -29,7 +29,8 @@ def idx_select(collection: List, indices: List, reversed_indices=False) -> List:
     """
     performs fancy indexing
     """
-    assert indices
+    if not indices:
+        return []
     if isinstance(indices[0], bool):
         if reversed_indices:
             indices = [not idx for idx in indices]
@@ -46,24 +47,22 @@ class BaseQlearningAgent:
         self,
         params: Params,
         net: QNet,
-        eps_scheduler,
-        experience_replay_buffer: Optional[Queue] = None,
+        eps_scheduler
     ) -> None:
         self._initialized = False
         self._episode_has_started = False
         self.max_steps_per_episode = params.pop("max_steps_per_episode")
         self.batch_size = params.get("n_parallel_envs")
-        self.experience_replay_buffer = experience_replay_buffer
         self.net = net
         self.eps_scheduler = eps_scheduler
         self.current_step = 0
+        self.history = defaultdict(list)
         self.gamefile = None
         self.visited_states = defaultdict(set)
         self.training = False
         self.prev_actions = None
         self.prev_states = None
         self.prev_not_done_idxs = None
-        # self.already_dones = [False for _ in range(self.batch_size)]
 
     def train(self) -> None:
         """ Tell the agent it is in training mode. """
@@ -167,10 +166,9 @@ class BaseQlearningAgent:
         self._episode_has_started = False
         self.prev_actions = None
         self.prev_states = None
-        # self.already_dones = [False for _ in range(self.batch_size)]
         self.prev_not_done_idxs = None
         self.visited_states = defaultdict(set)
-        # [You can insert code here.]
+        self.history = defaultdict(list)
 
     def reset(self):
         return self._end_episode()
@@ -190,7 +188,11 @@ class BaseQlearningAgent:
         batch_admissible_commands = infos["admissible_commands"]
         commands_not_finished = idx_select(batch_admissible_commands, not_done_idxs)
         states = [
-            State(description=description, feedback=obs, inventory=inventory)
+            State(
+                description=clean_text(description, "description"),
+                feedback=clean_text(obs, "feedback"),
+                inventory=clean_text(inventory, "inventory"),
+            )
             for description, obs, inventory in zip(
                 infos["description"], observations, infos["inventory"]
             )
@@ -203,7 +205,9 @@ class BaseQlearningAgent:
             ]
         else:
             self.net.eval()
-            q_values = self.net(idx_select(states, not_done_idxs), commands_not_finished)
+            q_values = self.net(
+                idx_select(states, not_done_idxs), commands_not_finished
+            )
             selected_action_idxs = [q_val.argmax().item() for q_val in q_values]
 
         # self.net.eval()
@@ -236,7 +240,7 @@ class BaseQlearningAgent:
         is_lost,
     ):
         if self.prev_actions:
-            # assert len(actions) == len(next_states) == len(self.prev_states)
+            idx = 0
             for (
                 previous_state,
                 next_state,
@@ -255,13 +259,12 @@ class BaseQlearningAgent:
                 idx_select(is_lost, self.prev_not_done_idxs),
             ):
                 assert action != "pass"
-                # if not already_done:
                 desc_inventory = next_state.description + next_state.inventory
                 reward, exploration_bonus = self.calculate_rewards(
                     reward=reward, game_lost=game_lost, done=done, state=desc_inventory
                 )
                 self.visited_states[self.gamefile].add(desc_inventory)
-                self.experience_replay_buffer.put(
+                self.history[self.prev_not_done_idxs[idx]].append(
                     Transition(
                         previous_state=previous_state,
                         next_state=next_state,
@@ -272,18 +275,19 @@ class BaseQlearningAgent:
                         done=done,
                     )
                 )
+                idx += 1
 
         self.prev_actions = actions
         self.prev_states = next_states
         self.prev_not_done_idxs = not_done_idxs
-        # self.already_dones = dones
 
     def calculate_rewards(self, reward: int, game_lost: bool, done: bool, state: str):
         reward = float(reward)
+        exploration_bonus = float(state not in self.visited_states[self.gamefile])
         if done:
             if game_lost:
                 reward = -2.0
+                exploration_bonus = 0.0
             else:
                 reward = 2.0
-        exploration_bonus = float(state in self.visited_states[self.gamefile])
         return reward, exploration_bonus
