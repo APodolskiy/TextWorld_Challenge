@@ -1,15 +1,18 @@
 import pickle
 
+import numpy
 import torch
 from typing import List
 
 from spacy.attrs import LEMMA, ORTH, POS
-from torch.nn import Module, Embedding, Linear, GRU, LeakyReLU
+from torch.nn import Module, Embedding, Linear, GRU, LeakyReLU, LSTM, GRUCell
 from torch.nn.functional import cosine_similarity
 from torch.nn.utils.rnn import pad_sequence, pack_padded_sequence
 
 from agents.multiprocessing_agent.custom_agent import Transition, State
 import spacy
+
+from helpers.layers import LSTMCell
 
 
 class SimpleNet(Module):
@@ -34,7 +37,7 @@ class SimpleNet(Module):
         self.tokenizer.add_special_case(*tok_exceptions)
 
         self.emb_dim = 150
-        self.hidden_size = 512
+        self.hidden_size = 256
 
         self.embedding = Embedding(
             self.vocab_size, self.emb_dim, padding_idx=self.pad_idx
@@ -47,6 +50,9 @@ class SimpleNet(Module):
             batch_first=True, input_size=self.emb_dim, hidden_size=self.hidden_size
         )
         self.state_to_hidden = Linear(self.hidden_size, self.hidden_size)
+
+        # self.state_memory = GRUCell(self.hidden_size, self.hidden_size)
+
         self.action_to_hidden = Linear(self.hidden_size, self.hidden_size)
 
         self.hidden_to_hidden = Linear(self.hidden_size, self.hidden_size)
@@ -65,45 +71,75 @@ class SimpleNet(Module):
         indices = [self.token_to_idx.get(t, self.unk_idx) for t in final_tokens]
         return torch.tensor(indices, device=self.device)
 
-    def embed(self, data_batch):
-        batch = sorted(data_batch, key=len, reverse=True)
-        lens = [len(s) for s in batch]
-        batch = pad_sequence(batch, batch_first=True)
-        embs = self.embedding(batch)
-        packed_embs = pack_padded_sequence(embs, lens, batch_first=True)
-        return packed_embs
-
     def forward(self, states: List[State], actions: List[List[str]]):
         state_batch = []
         for state in states:
-            desc, obs, inventory = state.description, state.feedback, state.inventory
+            desc, obs, inventory, prev_action = (
+                state.description,
+                state.feedback,
+                state.inventory,
+                state.prev_action,
+            )
             state_idxs = self.vectorize(
-                f" {self.join_symbol} ".join([desc, obs, inventory])
+                f" {self.join_symbol} ".join([desc, obs, inventory, state.prev_action])
             )
             state_batch.append(state_idxs)
-        state_embs = self.embed(state_batch)
+        state_embs, _ = self.embed(state_batch)
 
         actions_batch = []
         for state_actions in actions:
             if isinstance(state_actions, str):
                 state_actions = [state_actions]
-            actions_batch.append(self.embed([self.vectorize(a) for a in state_actions]))
+            act_embs, _ = self.embed([self.vectorize(a) for a in state_actions])
+            actions_batch.append(act_embs)
 
-        _, state = self.state_embedder(state_embs)
-        state = state.squeeze(0)
+        seq_states, state = self.state_embedder(state_embs)
+
+        # if hiddens is None:
+        #     hiddens = [
+        #         torch.zeros((1, self.hidden_size)).to(self.device)
+        #         for _ in range(len(states))
+        #     ]
 
         q_values = []
+        state = state.squeeze(0)
         for s, actions in zip(state, actions_batch):
+
             _, act_state = self.action_embedder(actions)
             act_state = act_state.squeeze(0)
             s_hidden = self.state_to_hidden(s)
+
+            # s_hidden = self.state_memory(s_hidden.unsqueeze(0), hidden)
+            # s_hidden = s_hidden.squeeze(0)
+
             act_hidden = self.action_to_hidden(act_state)
 
             q_values.append(
-                5 * cosine_similarity(s_hidden.unsqueeze(0), act_hidden, dim=1)
+                3 * cosine_similarity(s_hidden.unsqueeze(0), act_hidden, dim=1)
             )
 
+            # hidden = s_hidden
+
         return q_values
+
+    def embed(self, data_batch):
+        orig_lens = torch.tensor([len(s) for s in data_batch])
+        sorted_idxs = torch.argsort(orig_lens, descending=True)
+        orig_order = torch.argsort(sorted_idxs, descending=False)
+        sorted_data_batch = [data_batch[idx] for idx in sorted_idxs]
+        embs = self.embedding(pad_sequence(sorted_data_batch, batch_first=True))
+        packed_embs = pack_padded_sequence(
+            embs, [len(x) for x in sorted_data_batch], batch_first=True
+        )
+        assert all(
+            [
+                torch.equal(
+                    numpy.array(sorted_data_batch)[orig_order.numpy()][i], data_batch[i]
+                )
+                for i in range(len(data_batch))
+            ]
+        )
+        return packed_embs, orig_order
 
 
 class SimpleBowNet(Module):
