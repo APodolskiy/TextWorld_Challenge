@@ -27,7 +27,6 @@ def collect_experience(
         writer = SummaryWriter(log_dir)
     actor = BaseQlearningAgent(
         net=policy_net,
-        experience_replay_buffer=buffer,
         params=train_params,
         eps_scheduler=eps_scheduler,
     )
@@ -85,6 +84,14 @@ def collect_experience(
                     for c_r, p_c_r in zip(cumulative_rewards, prev_cumulative_rewards)
                 ]
                 prev_cumulative_rewards = cumulative_rewards
+            infos["is_lost"] = [
+                ("You lost!" in o if d else False) for o, d in zip(obs, dones)
+            ]
+            infos["gamefile"] = game_files[0]
+            actor.act(obs, rewards, dones, infos)
+            assert all([actor.history[i][-1].done for i in range(actor.batch_size)])
+            for game in actor.history.values():
+                buffer.put(game)
             actor.reset()
             actor.eps_scheduler.increase_step()
             if log_dir is not None:
