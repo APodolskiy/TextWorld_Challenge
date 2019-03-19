@@ -13,7 +13,7 @@ from agents.multiprocessing_agent.custom_agent import QNet, State
 from agents.multiprocessing_agent.simple_net import SimpleNet
 
 required_infos = EnvInfos(
-    description=True, inventory=True, extras=["recipe"], admissible_commands=True
+    description=True, inventory=True, extras=["recipe", "walkthrough"], admissible_commands=True
 )
 
 
@@ -24,6 +24,7 @@ def check_agent(game_file, agent: QNet):
     env_id = textworld.gym.make_batch(env_id, batch_size=1, parallel=False)
     env = gym.make(env_id)
     obs, infos = env.reset()
+    print(infos["extra.walkthrough"])
     adm_commands = infos["admissible_commands"]
 
     q_values = agent(
