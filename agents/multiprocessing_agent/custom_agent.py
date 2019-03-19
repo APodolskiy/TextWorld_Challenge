@@ -129,7 +129,7 @@ class BaseQlearningAgent:
         return EnvInfos(
             description=True,
             inventory=True,
-            extras=["recipe"],
+            extras=["walkthrough", "recipe"],
             admissible_commands=True,
         )
 
@@ -285,12 +285,9 @@ class BaseQlearningAgent:
         self.prev_not_done_idxs = not_done_idxs
 
     def calculate_rewards(self, reward: int, game_lost: bool, done: bool, state: str):
-        reward = float(reward)
+        reward = 10 * float(reward)
         exploration_bonus = float(state not in self.visited_states[self.gamefile])
-        if done:
-            if game_lost:
-                reward = -2.0
-                exploration_bonus = 0.0
-            else:
-                reward = 2.0
+        if game_lost:
+            reward = -2.0
+            exploration_bonus = 0.0
         return reward, exploration_bonus
