@@ -1,3 +1,5 @@
+from multiprocessing import Queue
+
 import torch
 from logging import info
 
@@ -15,7 +17,7 @@ collecting_step = 1
 
 def collect_experience(
     game_files,
-    buffer,
+    buffer: Queue,
     train_params,
     eps_scheduler,
     target_net: QNet,
@@ -55,6 +57,7 @@ def collect_experience(
                 target_net.load_state_dict(policy_net.state_dict())
 
             obs, infos = env.reset()
+            # print(infos["extra.walkthrough"][0])
             actor.train()
 
             dones = [False for _ in range(batch_size)]
