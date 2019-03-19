@@ -29,7 +29,7 @@ def check_agent(game_file, agent: QNet):
 
     q_values = agent(
         [
-            State(inventory=inv, description=desc, feedback=o)
+            State(inventory=inv, description=desc, feedback=o, prev_action="none")
             for o, desc, inv in zip(obs, infos["description"], infos["inventory"])
         ],
         adm_commands,
@@ -39,14 +39,15 @@ def check_agent(game_file, agent: QNet):
     for command, q_value in zip(adm_commands[0], q_values[0]):
         print(f"{command:35}{'*' if q_value == q_max else ''} -> {q_value.item()}")
     for _ in range(10):
+        commands = [adm_commands[0][q_values[0].argmax().item()]]
         obs, cumulative_rewards, dones, infos = env.step(
-            [adm_commands[0][q_values[0].argmax().item()]]
+            commands
         )
         print(obs)
         adm_commands = infos["admissible_commands"]
         q_values = agent(
             [
-                State(inventory=inv, description=desc, feedback=o)
+                State(inventory=inv, description=desc, feedback=o, prev_action=commands[0])
                 for o, desc, inv in zip(obs, infos["description"], infos["inventory"])
             ],
             adm_commands,

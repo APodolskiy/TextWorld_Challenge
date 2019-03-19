@@ -9,7 +9,7 @@ from agents.multiprocessing_agent.bert_net import QNet
 from agents.multiprocessing_agent.utils import clean_text
 from agents.utils.params import Params
 
-State = namedtuple("State", ("description", "feedback", "inventory"))
+State = namedtuple("State", ("description", "feedback", "inventory", "prev_action"))
 
 Transition = namedtuple(
     "Transition",
@@ -43,12 +43,7 @@ class BaseQlearningAgent:
     penalty
     """
 
-    def __init__(
-        self,
-        params: Params,
-        net: QNet,
-        eps_scheduler
-    ) -> None:
+    def __init__(self, params: Params, net: QNet, eps_scheduler) -> None:
         self._initialized = False
         self._episode_has_started = False
         self.max_steps_per_episode = params.pop("max_steps_per_episode")
@@ -60,7 +55,7 @@ class BaseQlearningAgent:
         self.gamefile = None
         self.visited_states = defaultdict(set)
         self.training = False
-        self.prev_actions = None
+        self.prev_actions = ["none" for _ in range(self.batch_size)]
         self.prev_states = None
         self.prev_not_done_idxs = None
 
@@ -127,6 +122,7 @@ class BaseQlearningAgent:
                 admissible_commands,                        # Handicap 5
         """
         return EnvInfos(
+            max_score=True,
             description=True,
             inventory=True,
             extras=["walkthrough", "recipe"],
@@ -164,7 +160,7 @@ class BaseQlearningAgent:
             infos: Additional information for each game.
         """
         self._episode_has_started = False
-        self.prev_actions = None
+        self.prev_actions = ["none" for _ in range(self.batch_size)]
         self.prev_states = None
         self.prev_not_done_idxs = None
         self.visited_states = defaultdict(set)
@@ -192,9 +188,13 @@ class BaseQlearningAgent:
                 description=clean_text(description, "description"),
                 feedback=clean_text(obs, "feedback"),
                 inventory=clean_text(inventory, "inventory"),
+                prev_action=action,
             )
-            for description, obs, inventory in zip(
-                infos["description"], observations, infos["inventory"]
+            for description, obs, inventory, action in zip(
+                infos["description"],
+                observations,
+                infos["inventory"],
+                self.prev_actions,
             )
         ]
 
@@ -242,7 +242,7 @@ class BaseQlearningAgent:
         dones,
         is_lost,
     ):
-        if self.prev_actions:
+        if self.prev_states:
             idx = 0
             for (
                 previous_state,
@@ -279,14 +279,13 @@ class BaseQlearningAgent:
                     )
                 )
                 idx += 1
-
-        self.prev_actions = actions
         self.prev_states = next_states
+        self.prev_actions = actions
         self.prev_not_done_idxs = not_done_idxs
 
     def calculate_rewards(self, reward: int, game_lost: bool, done: bool, state: str):
-        reward = 10 * float(reward)
-        exploration_bonus = float(state not in self.visited_states[self.gamefile])
+        reward = float(reward)
+        exploration_bonus = 0.5 * float(state not in self.visited_states[self.gamefile])
         if game_lost:
             reward = -2.0
             exploration_bonus = 0.0
