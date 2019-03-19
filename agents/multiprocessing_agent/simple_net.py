@@ -1,11 +1,10 @@
 import pickle
-from logging import warning
 
 import torch
 from typing import List
 
 from spacy.attrs import LEMMA, ORTH, POS
-from torch.nn import Module, Embedding, LSTM, Linear, GRU, LeakyReLU
+from torch.nn import Module, Embedding, Linear, GRU, LeakyReLU
 from torch.nn.functional import cosine_similarity
 from torch.nn.utils.rnn import pad_sequence, pack_padded_sequence
 
@@ -34,8 +33,8 @@ class SimpleNet(Module):
         self.tokenizer = tokenizer
         self.tokenizer.add_special_case(*tok_exceptions)
 
-        self.emb_dim = 300
-        self.hidden_size = 1024
+        self.emb_dim = 150
+        self.hidden_size = 512
 
         self.embedding = Embedding(
             self.vocab_size, self.emb_dim, padding_idx=self.pad_idx
@@ -64,12 +63,6 @@ class SimpleNet(Module):
                 if lemma and lemma not in bad_symbols and "$" not in lemma:
                     final_tokens.append(lemma)
         indices = [self.token_to_idx.get(t, self.unk_idx) for t in final_tokens]
-        # TODO: remove
-        # try:
-        #     idx = indices.index(self.unk_idx)
-        #     warning(f"Bad token: {final_tokens[idx]}")
-        # except ValueError:
-        #     pass
         return torch.tensor(indices, device=self.device)
 
     def embed(self, data_batch):
@@ -106,7 +99,9 @@ class SimpleNet(Module):
             s_hidden = self.state_to_hidden(s)
             act_hidden = self.action_to_hidden(act_state)
 
-            q_values.append(5 * cosine_similarity(s_hidden.unsqueeze(0), act_hidden, dim=1))
+            q_values.append(
+                5 * cosine_similarity(s_hidden.unsqueeze(0), act_hidden, dim=1)
+            )
 
         return q_values
 
@@ -128,8 +123,8 @@ class SimpleBowNet(Module):
         ]
         self.tokenizer = tokenizer
         self.tokenizer.add_special_case(*tok_exceptions)
-        self.emb_dim = 300
-        self.hidden_size = 1024
+        self.emb_dim = 150
+        self.hidden_size = 512
         self.embedding = Embedding(
             self.vocab_size, self.emb_dim, padding_idx=self.pad_idx
         )
