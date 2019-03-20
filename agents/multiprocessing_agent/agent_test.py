@@ -9,9 +9,10 @@ import textworld.gym
 from allennlp.common import Params
 from textworld import EnvInfos
 
-from agents.multiprocessing_agent.custom_agent import QNet, State
+from agents.multiprocessing_agent.custom_agent import QNet, State, BaseQlearningAgent
 from agents.multiprocessing_agent.simple_net import SimpleNet
 from agents.multiprocessing_agent.utils import clean_text
+from agents.utils.eps_scheduler import EpsScheduler, DeterministicEpsScheduler
 
 required_infos = EnvInfos(
     description=True,
@@ -21,53 +22,34 @@ required_infos = EnvInfos(
 )
 
 
-def check_agent(game_file, agent: QNet):
+def check_agent(game_file, train_params, agent_net: QNet):
     env_id = textworld.gym.register_games(
         [game_file], required_infos, max_episode_steps=1000, name="check_agent"
     )
     env_id = textworld.gym.make_batch(env_id, batch_size=1, parallel=False)
     env = gym.make(env_id)
     obs, infos = env.reset()
-    print(infos["extra.walkthrough"])
-    adm_commands = infos["admissible_commands"]
+    rewards = [0, ]
+    dones = [False]
 
-    q_values = agent(
-        [
-            State(
-                inventory=clean_text(inv, "inventory"),
-                description=clean_text(desc, "description"),
-                feedback=clean_text(o, "feedback"),
-                prev_action="none",
-            )
-            for o, desc, inv in zip(obs, infos["description"], infos["inventory"])
-        ],
-        adm_commands,
+    actor = BaseQlearningAgent(
+        net=agent_net,
+        params=train_params,
+        eps_scheduler=DeterministicEpsScheduler(),
     )
-    q_max = q_values[0].max()
 
-    for command, q_value in zip(adm_commands[0], q_values[0]):
-        print(f"{command:35}{'*' if q_value == q_max else ''} -> {q_value.item()}")
-    for _ in range(100):
-        commands = [adm_commands[0][q_values[0].argmax().item()]]
+    print(infos["extra.walkthrough"])
+
+    cnt = 0
+    while not all(dones) and cnt < 10:
+        infos["gamefile"] = game_file[0]
+        infos["is_lost"] = [False]
+
+        commands = actor.act(obs, rewards, dones, infos)
+        print(f">{commands[0]}")
         obs, cumulative_rewards, dones, infos = env.step(commands)
-        print(obs)
-        adm_commands = infos["admissible_commands"]
-        q_values = agent(
-            [
-                State(
-                    inventory=clean_text(inv, "inventory"),
-                    description=clean_text(desc, "description"),
-                    feedback=clean_text(o, "feedback"),
-                    prev_action=commands[0],
-                )
-                for o, desc, inv in zip(obs, infos["description"], infos["inventory"])
-            ],
-            adm_commands,
-        )
-        q_max = q_values[0].max()
-
-        for command, q_value in zip(adm_commands[0], q_values[0]):
-            print(f"{command:35}{'*' if q_value == q_max else ''} -> {q_value.item()}")
+        print(obs[0])
+        cnt += 1
 
 
 if __name__ == "__main__":
@@ -78,4 +60,4 @@ if __name__ == "__main__":
     agent = SimpleNet(device="cpu", tokenizer=spacy.load("en_core_web_sm").tokenizer)
     agent.load_state_dict(torch.load(params["training"]["model_path"]))
     game_file = f"games/train_sample/{args.game_file}"
-    check_agent(game_file, agent)
+    check_agent(game_file=game_file, agent_net=agent, train_params=params.pop("training"))
