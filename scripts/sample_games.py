@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 FIND_NUMBER = re.compile(r'[0-9]+$')
 
 
-def sample_random_games(files_dir: str, num_games: int) -> List[Path]:
+def sample_random_games(files_dir: str, num_games: int, seed: int = 42) -> List[Path]:
     """
     Sample random games from the specified folder
     Args:
@@ -28,7 +28,7 @@ def sample_random_games(files_dir: str, num_games: int) -> List[Path]:
     Returns: list of `pathlib.Path` related to the sampled games
 
     """
-    numpy.random.seed(0)
+    numpy.random.seed(seed)
     files = sorted(Path(files_dir).iterdir())
     # each game is defined by .json, .z8, .ulx files
     total_games = len(files) // 3

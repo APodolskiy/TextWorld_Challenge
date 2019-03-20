@@ -7,7 +7,10 @@ from typing import Union
 from scripts.sample_games import sample_random_games
 
 
-def split_train_dev(train_data_path: str, dev_data_path: str, valid_frac: Union[int, float] = 700) -> None:
+def split_train_dev(train_data_path: str,
+                    dev_data_path: str,
+                    valid_frac: Union[int, float] = 700,
+                    seed: int = 0) -> None:
     """
     Splits whole dataset into train and dev datasets.
     !!!Important!!! For the space and time performance
@@ -34,7 +37,7 @@ def split_train_dev(train_data_path: str, dev_data_path: str, valid_frac: Union[
         valid_games_num = valid_frac
     else:
         raise ValueError(f"Incorrect type of valid_frac argument. Should be int or float.")
-    game_files = sample_random_games(train_data_path, num_games=valid_games_num)
+    game_files = sample_random_games(train_data_path, num_games=valid_games_num, seed=seed)
     dev_data_path = Path(dev_data_path)
     dev_data_path.mkdir(parents=True, exist_ok=False)
     for game_file in game_files:
