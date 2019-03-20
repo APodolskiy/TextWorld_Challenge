@@ -66,7 +66,6 @@ def collect_experience(
                 with torch.no_grad():
                     command = actor.act(obs, cumulative_rewards, dones, infos)
                 obs, cumulative_rewards, dones, infos = env.step(command)
-                prev_cumulative_rewards = cumulative_rewards
             infos["gamefile"] = game_files[0]
             actor.act(obs, cumulative_rewards, dones, infos)
             assert all([actor.history[i][-1].done for i in range(actor.batch_size)])
