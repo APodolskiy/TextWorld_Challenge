@@ -1,3 +1,6 @@
+from typing import List
+
+
 def clean_text(s, type_):
     assert type_ in ["inventory", "feedback", "description"]
     if type_ == "inventory":
@@ -17,3 +20,16 @@ def clean_text(s, type_):
     if not result:
         result = "nothing"
     return result
+
+
+def idx_select(collection: List, indices: List, reversed_indices=False) -> List:
+    """
+    performs fancy indexing
+    """
+    if not indices:
+        return []
+    if isinstance(indices[0], bool):
+        if reversed_indices:
+            indices = [not idx for idx in indices]
+        return [collection[i] for i, idx in enumerate(indices) if idx]
+    return [collection[idx] for idx in indices]
