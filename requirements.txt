@@ -4,3 +4,6 @@ numpy
 docker
 textworld
 fire
+pytorch
+spacy
+allennlp
