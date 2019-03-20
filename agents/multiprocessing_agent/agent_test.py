@@ -1,18 +1,14 @@
 from argparse import ArgumentParser
 
-import spacy
-
-import torch
-
 import gym
+import spacy
 import textworld.gym
+import torch
 from allennlp.common import Params
-from textworld import EnvInfos
 
-from agents.multiprocessing_agent.custom_agent import QNet, State, BaseQlearningAgent
+from agents.multiprocessing_agent.custom_agent import QNet, BaseQlearningAgent
 from agents.multiprocessing_agent.simple_net import SimpleNet
-from agents.multiprocessing_agent.utils import clean_text
-from agents.utils.eps_scheduler import EpsScheduler, DeterministicEpsScheduler
+from agents.utils.eps_scheduler import DeterministicEpsScheduler
 
 
 def check_agent(game_file, train_params, agent_net: QNet):
@@ -25,7 +21,7 @@ def check_agent(game_file, train_params, agent_net: QNet):
     env_id = textworld.gym.make_batch(env_id, batch_size=1, parallel=False)
     env = gym.make(env_id)
     obs, infos = env.reset()
-    rewards = [0]
+    cumulative_rewards = [0]
     dones = [False]
 
     actor = BaseQlearningAgent(
@@ -35,8 +31,9 @@ def check_agent(game_file, train_params, agent_net: QNet):
     print(infos["extra.walkthrough"])
 
     cnt = 0
-    while not all(dones) and cnt < 10:
-        commands = actor.act(obs, rewards, dones, infos)
+    while not all(dones) and cnt < 20:
+        infos["gamefile"] = game_file[0]
+        commands = actor.act(obs, cumulative_rewards, dones, infos)
         print(f">{commands[0]}")
         obs, cumulative_rewards, dones, infos = env.step(commands)
         print(obs[0])
