@@ -1,18 +1,15 @@
 import pickle
-
-import numpy
-import torch
 from typing import List
 
+import numpy
+import spacy
+import torch
 from spacy.attrs import LEMMA, ORTH, POS
-from torch.nn import Module, Embedding, Linear, GRU, LeakyReLU, LSTM, GRUCell
+from torch.nn import Module, Embedding, Linear, GRU, LeakyReLU
 from torch.nn.functional import cosine_similarity
 from torch.nn.utils.rnn import pad_sequence, pack_padded_sequence
 
-from agents.multiprocessing_agent.custom_agent import Transition, State
-import spacy
-
-from helpers.layers import LSTMCell
+from agents.DRQN.custom_agent import Transition, State
 
 
 class SimpleNet(Module):
@@ -138,7 +135,8 @@ class SimpleNet(Module):
         assert all(
             [
                 torch.equal(
-                    numpy.array(sorted_data_batch,   dtype=object)[orig_order.numpy()][i], data_batch[i]
+                    numpy.array(sorted_data_batch, dtype=object)[orig_order.numpy()][i],
+                    data_batch[i],
                 )
                 for i in range(len(data_batch))
             ]

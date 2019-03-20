@@ -9,10 +9,9 @@ from shutil import rmtree
 import spacy
 import torch.multiprocessing as mp
 
-from agents.multiprocessing_agent.collecting import collect_experience
-from agents.multiprocessing_agent.bert_net import QNet
-from agents.multiprocessing_agent.learning import learn
-from agents.multiprocessing_agent.simple_net import SimpleNet
+from agents.DRQN.collecting import collect_experience
+from agents.DRQN.learning import learn
+from agents.DRQN.networks.simple_net import SimpleNet
 from agents.utils.params import Params
 from agents.utils.replay import BinaryPrioritizeReplayMemory
 

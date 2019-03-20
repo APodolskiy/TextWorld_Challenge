@@ -1,12 +1,10 @@
 from numpy import random
 from collections import namedtuple, defaultdict
-from multiprocessing import Queue
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any
 
 from textworld import EnvInfos
 
-from agents.multiprocessing_agent.bert_net import QNet
-from agents.multiprocessing_agent.utils import clean_text
+from agents.DRQN.utils import clean_text, idx_select
 from agents.utils.params import Params
 
 State = namedtuple("State", ("description", "feedback", "inventory", "prev_action"))
@@ -25,25 +23,12 @@ Transition = namedtuple(
 )
 
 
-def idx_select(collection: List, indices: List, reversed_indices=False) -> List:
-    """
-    performs fancy indexing
-    """
-    if not indices:
-        return []
-    if isinstance(indices[0], bool):
-        if reversed_indices:
-            indices = [not idx for idx in indices]
-        return [collection[i] for i, idx in enumerate(indices) if idx]
-    return [collection[idx] for idx in indices]
-
-
 class BaseQlearningAgent:
     """ Q-learning agent that requires all available information and therefore receives maximum
     penalty
     """
 
-    def __init__(self, params: Params, net: QNet, eps_scheduler) -> None:
+    def __init__(self, params: Params, net, eps_scheduler) -> None:
         self._initialized = False
         self.max_steps_per_episode = params.pop("max_steps_per_episode")
         self.batch_size = params.get("n_parallel_envs")

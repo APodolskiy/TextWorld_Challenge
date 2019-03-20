@@ -7,7 +7,7 @@ import gym
 import textworld.gym
 import numpy
 from tqdm import tqdm
-from agents.multiprocessing_agent.custom_agent import BaseQlearningAgent
+from agents.DRQN.custom_agent import BaseQlearningAgent
 from tensorboardX import SummaryWriter
 
 collecting_step = 1

@@ -10,16 +10,15 @@ import torch
 from torch.nn.functional import smooth_l1_loss
 from torch.optim import Adam
 
-from agents.multiprocessing_agent.custom_agent import Transition
-from agents.multiprocessing_agent.bert_net import QNet
-from agents.utils.replay import AbstractReplayMemory, BinaryPrioritizeReplayMemory
+from agents.DRQN.custom_agent import Transition
+from agents.utils.replay import BinaryPrioritizeReplayMemory
 
 learning_step = 1
 
 
 def learn(
-    policy_net: QNet,
-    target_net: QNet,
+    policy_net,
+    target_net,
     replay_buffer: BinaryPrioritizeReplayMemory,
     queue: Queue,
     params,
