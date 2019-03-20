@@ -5,7 +5,7 @@ training: {
     n_parallel_envs: 5,
     use_separate_process_envs: true,
     actor_device: "cuda:5",
-    target_net_update_freq: 50,
+    target_net_update_freq: 25,
     # learner params
     learner_device: "cuda:6",
     batch_size: 64,
@@ -13,7 +13,7 @@ training: {
     gamma: 0.95,
     max_steps_per_episode: 200,
     max_samples: 100,
-    n_learning_steps: 35,
+    n_learning_steps: 20,
     saving_freq: 10,
     model_path: "debug_saved_model.pth"
     },
@@ -23,7 +23,7 @@ network: {
     },
 epsilon: {
     init_eps: 1.0,
-    min_eps: 0.05,
+    min_eps: 0.01,
     gamma: 0.95,
     step_size: 2
     },
