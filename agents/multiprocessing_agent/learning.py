@@ -90,7 +90,7 @@ def learn(
             if log_dir is not None:
                 if learning_step % saving_freq == 0:
                     info("Saving learner weights")
-                    torch.save(target_net.state_dict(), model_path)
+                    torch.save(policy_net.state_dict(), model_path)
 
                 writer.add_scalar("train/loss", loss.item(), learning_step)
                 writer.add_histogram(
