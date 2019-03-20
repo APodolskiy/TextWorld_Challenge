@@ -6,12 +6,12 @@ import textworld.gym
 import torch
 from allennlp.common import Params
 
-from agents.multiprocessing_agent.custom_agent import QNet, BaseQlearningAgent
-from agents.multiprocessing_agent.simple_net import SimpleNet
+from agents.DRQN.custom_agent import BaseQlearningAgent
+from agents.DRQN.networks.simple_net import SimpleNet
 from agents.utils.eps_scheduler import DeterministicEpsScheduler
 
 
-def check_agent(game_file, train_params, agent_net: QNet):
+def check_agent(game_file, train_params, agent_net):
     env_id = textworld.gym.register_games(
         [game_file],
         BaseQlearningAgent.select_additional_infos(),
