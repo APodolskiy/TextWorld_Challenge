@@ -2,13 +2,15 @@ import logging
 from os.path import exists
 from shutil import rmtree
 
+import gym
 import spacy
 from multiprocessing import Queue
 from pathlib import Path
 
 import spacy
-
+import textworld.gym
 from agents.multiprocessing_agent.collecting import collect_experience
+from agents.multiprocessing_agent.custom_agent import BaseQlearningAgent
 from agents.multiprocessing_agent.learning import learn
 from agents.multiprocessing_agent.simple_net import SimpleNet, SimpleBowNet
 from agents.utils.eps_scheduler import EpsScheduler
@@ -24,8 +26,23 @@ if __name__ == "__main__":
         for f in Path("games/train_sample").iterdir()
         if f.is_file() and f.suffix == ".ulx"
     ][:1]
+
     params = Params.from_file("configs/debug_config.jsonnet")
     actor_device = params["training"].pop("actor_device")
+    requested_infos = BaseQlearningAgent.select_additional_infos()
+    env_id = textworld.gym.register_games(
+        games,
+        requested_infos,
+        max_episode_steps=params["training"]["max_steps_per_episode"],
+        name="training_par",
+    )
+    env_id = textworld.gym.make_batch(
+        env_id,
+        batch_size=params["training"]["n_parallel_envs"],
+        parallel=params["training"]["use_separate_process_envs"],
+    )
+    env = gym.make(env_id)
+
     my_net = SimpleNet(
         device=actor_device, tokenizer=spacy.load("en_core_web_sm").tokenizer
     ).to(actor_device)
@@ -59,6 +76,7 @@ if __name__ == "__main__":
             target_net=target_net,
             policy_net=my_net,
             log_dir="debug_runs/actor",
+            env=env
         )
 
         learn(
