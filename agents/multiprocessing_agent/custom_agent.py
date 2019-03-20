@@ -45,19 +45,12 @@ class BaseQlearningAgent:
 
     def __init__(self, params: Params, net: QNet, eps_scheduler) -> None:
         self._initialized = False
-        self._episode_has_started = False
         self.max_steps_per_episode = params.pop("max_steps_per_episode")
         self.batch_size = params.get("n_parallel_envs")
         self.net = net
         self.eps_scheduler = eps_scheduler
-        self.current_step = 0
-        self.history = defaultdict(list)
-        self.gamefile = None
-        self.visited_states = defaultdict(set)
-        self.training = False
-        self.prev_actions = ["none" for _ in range(self.batch_size)]
-        self.prev_states = None
-        self.prev_not_done_idxs = None
+        self.reset()
+        self._episode_has_started = True
 
     def train(self) -> None:
         """ Tell the agent it is in training mode. """
@@ -67,59 +60,11 @@ class BaseQlearningAgent:
         """ Tell the agent it is in evaluation mode. """
         self.training = False
 
-    def select_additional_infos(self) -> EnvInfos:
+    @staticmethod
+    def select_additional_infos() -> EnvInfos:
         """
         Returns what additional information should be made available at each game step.
 
-        Requested information will be included within the `infos` dictionary
-        passed to `CustomAgent.act()`. To request specific information, create a
-        :py:class:`textworld.EnvInfos <textworld.envs.wrappers.filter.EnvInfos>`
-        and set the appropriate attributes to `True`. The possible choices are:
-
-        * `description`: text description of the current room, i.e. output of the `look` command;
-        * `inventory`: text listing of the player's inventory, i.e. output of the `inventory` command;
-        * `max_score`: maximum reachable score of the game;
-        * `objective`: objective of the game described in text;
-        * `entities`: names of all entities in the game;
-        * `verbs`: verbs understood by the the game;
-        * `command_templates`: templates for commands understood by the the game;
-        * `admissible_commands`: all commands relevant to the current state;
-
-        In addition to the standard information, game specific information
-        can be requested by appending corresponding strings to the `extras`
-        attribute. For this competition, the possible extras are:
-
-        * `'recipe'`: description of the cookbook;
-        * `'walkthrough'`: one possible solution to the game (not guaranteed to be optimal);
-
-        Example:
-            Here is an example of how to request information and retrieve it.
-
-            >>> from textworld import EnvInfos
-            >>> request_infos = EnvInfos(description=True, inventory=True, extras=["recipe"])
-            ...
-            >>> env = gym.make(env_id)
-            >>> ob, infos = env.reset()
-            >>> print(infos["description"])
-            >>> print(infos["inventory"])
-            >>> print(infos["extra.recipe"])
-
-        Notes:
-            The following information *won't* be available at test time:
-
-            * 'walkthrough'
-
-            Requesting additional infos comes with some penalty (called handicap).
-            The exact penalty values will be defined in function of the average
-            scores achieved by agents using the same handicap.
-
-            Handicap is defined as follows
-                max_score, has_won, has_lost,               # Handicap 0
-                description, inventory, verbs, objective,   # Handicap 1
-                command_templates,                          # Handicap 2
-                entities,                                   # Handicap 3
-                extras=["recipe"],                          # Handicap 4
-                admissible_commands,                        # Handicap 5
         """
         return EnvInfos(
             max_score=True,
@@ -133,7 +78,6 @@ class BaseQlearningAgent:
         """ Initialize the agent. """
         self._initialized = True
 
-        # [You can insert code here.]
 
     def _start_episode(self, obs: List[str], infos: Dict[str, List[Any]]) -> None:
         """
@@ -159,8 +103,12 @@ class BaseQlearningAgent:
             score: The score obtained so far for each game.
             infos: Additional information for each game.
         """
+        self.current_step = 0
+        self.gamefile = None
         self._episode_has_started = False
         self.prev_actions = ["none" for _ in range(self.batch_size)]
+        self.max_reward = None
+        self.prev_cum_rewards = [0 for _ in range(self.batch_size)]
         self.prev_states = None
         self.prev_not_done_idxs = None
         self.visited_states = defaultdict(set)
@@ -172,11 +120,14 @@ class BaseQlearningAgent:
     def act(
         self,
         observations: List[str],
-        rewards: List[int],
+        cum_rewards: List[int],
         dones: List[bool],
         infos: Dict[str, List[Any]],
     ):
-        self.gamefile = infos["gamefile"]
+        self.gamefile = infos.get("gamefile")
+        infos["is_lost"] = [
+            ("You lost!" in o if d else False) for o, d in zip(observations, dones)
+        ]
         actions = ["pass" for _ in range(len(observations))]
         not_done_idxs = idx_select(
             list(range(self.batch_size)), dones, reversed_indices=True
@@ -198,7 +149,6 @@ class BaseQlearningAgent:
             )
         ]
 
-        # TODO: hzhz
         if random.random() < self.eps_scheduler.eps:
             selected_action_idxs = [
                 random.choice(len(adm_com)) for adm_com in commands_not_finished
@@ -220,12 +170,13 @@ class BaseQlearningAgent:
             not_done_idxs, commands_not_finished, selected_action_idxs
         ):
             actions[not_done_idx] = adm_com[sel_act_idx]
+        self.max_reward = infos["max_score"][0]
         self.update_experience_replay_buffer(
             not_done_idxs=not_done_idxs,
             next_states=states,
             actions=actions,
             batch_admissible_commands=batch_admissible_commands,
-            rewards=rewards,
+            cum_rewards=cum_rewards,
             dones=dones,
             is_lost=infos["is_lost"],
         )
@@ -238,7 +189,7 @@ class BaseQlearningAgent:
         next_states,
         actions,
         batch_admissible_commands,
-        rewards,
+        cum_rewards,
         dones,
         is_lost,
     ):
@@ -249,7 +200,8 @@ class BaseQlearningAgent:
                 next_state,
                 action,
                 admissible_commands,
-                reward,
+                cum_reward,
+                prev_cum_reward,
                 done,
                 game_lost,
             ) in zip(
@@ -257,14 +209,21 @@ class BaseQlearningAgent:
                 idx_select(next_states, self.prev_not_done_idxs),
                 idx_select(self.prev_actions, self.prev_not_done_idxs),
                 idx_select(batch_admissible_commands, self.prev_not_done_idxs),
-                idx_select(rewards, self.prev_not_done_idxs),
+                idx_select(cum_rewards, self.prev_not_done_idxs),
+                idx_select(self.prev_cum_rewards, self.prev_not_done_idxs),
                 idx_select(dones, self.prev_not_done_idxs),
                 idx_select(is_lost, self.prev_not_done_idxs),
             ):
                 assert action != "pass"
                 desc_inventory = next_state.description + next_state.inventory
+                if self.current_step == 0:
+                    self.visited_states[self.gamefile].add(desc_inventory)
                 reward, exploration_bonus = self.calculate_rewards(
-                    reward=reward, game_lost=game_lost, done=done, state=desc_inventory
+                    cum_reward=cum_reward,
+                    prev_cum_reward=prev_cum_reward,
+                    game_lost=game_lost,
+                    done=done,
+                    state=desc_inventory,
                 )
                 self.visited_states[self.gamefile].add(desc_inventory)
                 self.history[self.prev_not_done_idxs[idx]].append(
@@ -282,11 +241,22 @@ class BaseQlearningAgent:
         self.prev_states = next_states
         self.prev_actions = actions
         self.prev_not_done_idxs = not_done_idxs
+        self.prev_cum_rewards = cum_rewards
 
-    def calculate_rewards(self, reward: int, game_lost: bool, done: bool, state: str):
-        reward = float(reward)
+    def calculate_rewards(
+        self,
+        cum_reward: int,
+        prev_cum_reward: int,
+        game_lost: bool,
+        done: bool,
+        state: str,
+    ):
+        reward = float(cum_reward - prev_cum_reward)
         exploration_bonus = 0.5 * float(state not in self.visited_states[self.gamefile])
         if game_lost:
             reward = -2.0
+            exploration_bonus = 0.0
+        if done and cum_reward == self.max_reward:
+            reward = 5.0
             exploration_bonus = 0.0
         return reward, exploration_bonus
