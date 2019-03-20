@@ -100,9 +100,11 @@ class BinaryPrioritizeReplayMemory(AbstractReplayMemory):
         self.secondary_capacity = self.capacity - self.prior_capacity
         self.priority_fraction = priority_fraction
 
-    def push(self, transition: NamedTuple, is_prior: bool = False):
+    def push(self, transition: NamedTuple):
         if self.priority_fraction == 0.0:
             is_prior = False
+        else:
+            is_prior = transition.reward > 0.0
         if is_prior:
             self._push_prior(transition)
         else:
@@ -141,3 +143,60 @@ class BinaryPrioritizeReplayMemory(AbstractReplayMemory):
 
     def get_len_secondary(self) -> int:
         return len(self.secondary_buffer)
+
+
+class TernaryPrioritizeReplayMemory(AbstractReplayMemory):
+    def __init__(self, capacity: int = 100000, priority_fraction: float = 0.0):
+        super(TernaryPrioritizeReplayMemory, self).__init__(capacity=capacity)
+        self.priority_fraction = priority_fraction
+        self.pos_prior_buffer = []
+        self.pos_prior_position = 0
+        self.neg_prior_buffer = []
+        self.neg_prior_pos = 0
+        self.prior_capacity = int(self.capacity * self.priority_fraction) // 2
+        self.secondary_buffer = []
+        self.secondary_position = 0
+        self.secondary_capacity = self.capacity - 2 * self.prior_capacity
+
+    def push(self, transition: NamedTuple):
+        if self.priority_fraction == 0.0:
+            is_prior = False
+        else:
+            is_prior = transition.reward != 0.0
+        if is_prior:
+            self._push_prior(transition)
+        else:
+            self._push_secondary(transition)
+
+    def sample(self, batch_size: int):
+        if self.priority_fraction == 0.0:
+            batch_size = min(batch_size, len(self.secondary_buffer))
+            return random.sample(self.secondary_buffer, batch_size)
+        else:
+            prior_size = min(int(batch_size * self.priority_fraction) // 2,
+                             min(len(self.pos_prior_buffer), len(self.neg_prior_buffer)))
+            secondary_size = min(batch_size - prior_size, len(self.secondary_buffer))
+            pos_prior_samples = random.sample(self.pos_prior_buffer, prior_size)
+            neg_prior_samples = random.sample(self.neg_prior_buffer, prior_size)
+            secondary_samples = random.sample(self.secondary_buffer, secondary_size)
+            samples = pos_prior_samples + neg_prior_samples + secondary_samples
+            random.shuffle(samples)
+            return samples
+
+    def _push_prior(self, transition: NamedTuple):
+        if transition.reward > 0.0:
+            if len(self.pos_prior_buffer) < self.prior_capacity:
+                self.pos_prior_buffer.append(None)
+            self.pos_prior_buffer[self.pos_prior_position] = transition
+            self.pos_prior_position = (self.pos_prior_position + 1) % self.prior_capacity
+        else:
+            if len(self.neg_prior_buffer) < self.prior_capacity:
+                self.neg_prior_buffer.append(None)
+            self.neg_prior_buffer[self.neg_prior_position] = transition
+            self.neg_prior_position = (self.neg_prior_position + 1) % self.prior_capacity
+
+    def _push_secondary(self, transition: NamedTuple):
+        if len(self.secondary_buffer) < self.secondary_capacity:
+            self.secondary_buffer.append(None)
+        self.secondary_buffer[self.secondary_position] = transition
+        self.secondary_position = (self.secondary_position + 1) % self.secondary_capacity
