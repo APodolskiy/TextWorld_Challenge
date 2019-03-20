@@ -59,16 +59,25 @@ def learn(
             next_non_final_allowed_actions = [
                 batch.allowed_actions[idx] for idx in non_terminal_idxs
             ]
+            policy_net.train()
             target_net.eval()
+            # Double DQN here
             with torch.no_grad():
-                next_state_q_values = target_net(
+                next_state_q_values = policy_net(
                     next_non_final_states, next_non_final_allowed_actions
                 )
-
-            next_state_values[non_terminal_idxs] = torch.tensor(
-                [q_values.max().item() for q_values in next_state_q_values],
-                device=policy_net.device,
-            )
+                best_q_value_idxs = [
+                    q_values.argmax().item() for q_values in next_state_q_values
+                ]
+                selected_actions = [
+                    allowed_actions[idx]
+                    for idx, allowed_actions in zip(
+                        best_q_value_idxs, next_non_final_allowed_actions
+                    )
+                ]
+                next_state_values[non_terminal_idxs] = torch.cat(
+                    target_net(next_non_final_states, selected_actions)
+                )
             expected_values = (
                 torch.tensor(batch.reward, device=q_values_selected_actions.device)
                 + torch.tensor(
