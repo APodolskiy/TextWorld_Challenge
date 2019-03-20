@@ -78,7 +78,6 @@ class BaseQlearningAgent:
         """ Initialize the agent. """
         self._initialized = True
 
-
     def _start_episode(self, obs: List[str], infos: Dict[str, List[Any]]) -> None:
         """
         Prepare the agent for the upcoming episode.
@@ -214,10 +213,11 @@ class BaseQlearningAgent:
                 idx_select(dones, self.prev_not_done_idxs),
                 idx_select(is_lost, self.prev_not_done_idxs),
             ):
-                assert action != "pass"
                 desc_inventory = next_state.description + next_state.inventory
-                if self.current_step == 0:
-                    self.visited_states[self.gamefile].add(desc_inventory)
+                if self.current_step == 1:
+                    self.visited_states[self.gamefile].add(
+                        previous_state.description + previous_state.inventory
+                    )
                 reward, exploration_bonus = self.calculate_rewards(
                     cum_reward=cum_reward,
                     prev_cum_reward=prev_cum_reward,
@@ -254,9 +254,9 @@ class BaseQlearningAgent:
         reward = float(cum_reward - prev_cum_reward)
         exploration_bonus = 0.5 * float(state not in self.visited_states[self.gamefile])
         if game_lost:
-            reward = -2.0
+            reward = -1.5
             exploration_bonus = 0.0
         if done and cum_reward == self.max_reward:
-            reward = 5.0
+            reward = 2.0
             exploration_bonus = 0.0
         return reward, exploration_bonus
