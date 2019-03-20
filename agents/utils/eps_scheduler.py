@@ -22,6 +22,15 @@ class EpsScheduler:
         self.current_step += 1
 
 
+class DeterministicEpsScheduler:
+    def __init__(self):
+        pass
+
+    @property
+    def eps(self):
+        return 0.0
+
+
 class LinearScheduler:
     def __init__(self, config: Dict):
         self.init_eps = config.pop("init_eps", 1.0)
