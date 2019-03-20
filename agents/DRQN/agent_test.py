@@ -1,3 +1,6 @@
+"""
+Tests trained agent on a provided game
+"""
 from argparse import ArgumentParser
 
 import gym
