@@ -1,7 +1,12 @@
 import argparse
 import logging
 from pathlib import Path
+import shutil
+
+import torch
 from tqdm import tqdm
+
+from tensorboardX import SummaryWriter
 
 import gym
 import textworld.gym
@@ -45,6 +50,12 @@ def train(game_files):
     env_id = textworld.gym.make_batch(env_id, batch_size=agent.batch_size, parallel=True)
     env = gym.make(env_id)
 
+    log_path = Path('runs/test_dqn')
+    if log_path.exists():
+        shutil.rmtree(str(log_path))
+    log_path.mkdir(parents=True)
+    writer = SummaryWriter(log_dir=str(log_path))
+
     for epoch_no in range(1, agent.nb_epochs + 1):
         stats = {
             "scores": [],
@@ -69,9 +80,13 @@ def train(game_files):
             stats["scores"].extend(scores)
             stats["steps"].extend(steps)
 
+        print(f"Scores: {stats['scores']}\nSteps: {stats['steps']}")
         score = sum(stats["scores"]) / agent.batch_size
         steps = sum(stats["steps"]) / agent.batch_size
         print("Epoch: {:3d} | {:2.1f} pts | {:4.1f} steps".format(epoch_no, score, steps))
+        writer.add_scalar("score", score, epoch_no)
+        if epoch_no % 10 == 0:
+            torch.save(agent.model.state_dict(), log_path / "model.pt")
 
 
 if __name__ == '__main__':

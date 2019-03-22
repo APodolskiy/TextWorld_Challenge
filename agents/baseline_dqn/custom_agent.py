@@ -1,18 +1,29 @@
+from collections import namedtuple
 import json
 import random
 from typing import Dict, List, Any
 
 from _jsonnet import evaluate_file
+import numpy as np
 import spacy
 import torch
+import torch.optim as optim
 import torch.nn.functional as F
+from spacy.lang.ar import STOP_WORDS
+from spacy.lang.en import STOP_WORDS
 
 from textworld import EnvInfos
 
 from agents.utils.generic import to_np, to_pt, preproc, _words_to_ids, pad_sequences, max_len
 from agents.utils.eps_scheduler import LinearScheduler
 from agents.baseline_dqn.model import LSTM_DQN
-from agents.utils.replay import BinaryPrioritizeReplayMemory
+from agents.utils.replay import BinaryPrioritizeReplayMemory, TernaryPrioritizeReplayMemory
+
+
+Transition = namedtuple('Transition', ('description_id_list', 'command',
+                                       'reward', 'mask', 'done',
+                                       'next_description_id_list',
+                                       'next_commands'))
 
 
 class CustomAgent:
@@ -32,56 +43,110 @@ class CustomAgent:
 
         self.use_cuda = True and torch.cuda.is_available()
         self.model = LSTM_DQN(config=self.config["model"], word_vocab=self.word_vocab)
-        self.action_head = None
+        self.target_model = LSTM_DQN(config=self.config["model"], word_vocab=self.word_vocab)
+        self.target_model.load_state_dict(self.model.state_dict())
+        self.optimizer = optim.Adam(self.model.parameters())
+        if self.use_cuda:
+            self.model.cuda()
+            self.target_model.cuda()
+
+        self.replay_memory = TernaryPrioritizeReplayMemory(capacity=500_000, priority_fraction=0.5)
 
         self.nlp = spacy.load('en', disable=['ner', 'parser', 'tagger'])
 
+        self.update_per_k_game_steps = 10
+        self.update_target = 50
+        self.replay_batch_size = 64
+        self.clip_grad_norm = 10
+        self.discount_gamma = 0.95
+
         self.eps_scheduler = LinearScheduler({})
         self.act_steps = 0
+        self.episode_steps = 0
+        self.num_episodes = 0
 
         self._episode_started = False
         self.previous_actions: List[str] = []
-        self.scores: List[int] = []
-        self.dones: List[int] = []
+        self.scores: List[List[int]] = []
+        self.dones: List[List[int]] = []
+        self.prev_description_id: List = None
+        self.prev_command: List = None
 
     def act(self, obs: List[str], scores: List[int], dones: List[bool], infos: Dict[str, List[Any]]) -> List[str]:
         if not self._episode_started:
             self._init(obs, infos)
+            self._episode_started = True
 
         if self.mode == "eval":
             return self.act_eval(obs, scores, dones, infos)
 
-        if self.current_step > 0:
+        if self.episode_steps > 0:
             # append scores / dones from previous step into memory
+            max_score = infos["max_score"]
             self.scores.append(scores)
             self.dones.append(dones)
             # compute previous step's rewards and masks
-            rewards_np, rewards, mask_np, mask = self.compute_reward()
+            rewards_np, rewards, mask_np, mask = self.compute_reward(obs, max_score)
 
         admissible_commands = infos["admissible_commands"]
+
+        # Tokenize info
+        input_description, description_id = self.get_game_state_info(obs, infos)
+        input_commands, preprocessed_commands = self.preprocess_commands(admissible_commands)
+
         # Choose actions
         actions = []
-        if random.random() > self.eps_scheduler(self.act_steps):
-            actions.extend([random.choice(env_commands) for env_commands in admissible_commands])
+        choosen_command_idx = []
+        if random.random() < self.eps_scheduler(self.act_steps):
+            choosen_command_idx.extend([np.random.choice(len(commands)) for commands in admissible_commands])
+            actions.extend([env_commands[command_id]
+                            for env_commands, command_id in zip(admissible_commands, choosen_command_idx)])
         else:
             with torch.no_grad():
-                input_description, description_id_list = self.get_game_state_info(obs, infos)
-                # TODO: implement act method for simple DQN model.
-                preprocessed_commands = self.preprocess_commands(admissible_commands)
-                for description, preprocessed_commands, command_texts \
-                        in zip(input_description, preprocessed_commands, admissible_commands):
-                    command_idx = self.get_command(description, preprocessed_commands)
-                    actions.append(command_texts[command_idx])
+                command_ids = self.get_commands(input_description, input_commands)
+                choosen_command_idx.extend(command_ids)
+                actions.extend(ad_cmd[cmd_id] for ad_cmd, cmd_id in zip(admissible_commands, choosen_command_idx))
 
         self.previous_actions = actions
         # Update experience replay memory
-        pass
+        if self.episode_steps > 0:
+            for b in range(len(obs)):
+                if mask_np[b] == 0:
+                    continue
+                transition = Transition(self.prev_description_id[b],
+                                        self.prev_command[b],
+                                        rewards[b],
+                                        mask[b],
+                                        dones[b],
+                                        description_id[b],
+                                        preprocessed_commands[b]
+                                        )
+                self.replay_memory.push(transition=transition)
 
         # Update model
-        pass
+        if self.episode_steps > 0 and self.episode_steps % self.update_per_k_game_steps == 0:
+            loss = self.update()
+            if loss is not None:
+                # Backpropagate
+                self.optimizer.zero_grad()
+                loss.backward()
+                #loss.backward(retain_graph=True)
+                # `clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.clip_grad_norm)
+                self.optimizer.step()  # apply gradients
+
+        if self.episode_steps > 0 and self.episode_steps % self.update_target == 0:
+            self.target_model.load_state_dict(self.model.state_dict())
+
+        self.prev_description_id = description_id
+        self.prev_command = [[preprocessed_commands[env_id][idx]] for env_id, idx in enumerate(choosen_command_idx)]
+        self.episode_steps += 1
+        self.act_steps += 1
 
         if all(dones):
             # Nothing to return if all environments terminated
+            self.finish()
+            self._episode_started = False
             return
 
         return actions
@@ -89,14 +154,78 @@ class CustomAgent:
     def act_eval(self, obs: List[str], scores: List[int], dones: List[bool], infos: Dict[str, List[Any]]) -> List[str]:
         pass
 
-    def update(self, transition):
+    def update(self):
         # Update network parameters
-        pass
+        if len(self.replay_memory) < self.replay_batch_size:
+            return None
+        transitions = self.replay_memory.sample(batch_size=self.replay_batch_size)
+        batch = Transition(*zip(*transitions))
+        # Compute loss
+        description_id = pad_sequences(batch.description_id_list,
+                                       maxlen=max_len(batch.description_id_list)).astype('int32')
+        input_description = to_pt(description_id, self.use_cuda)
+        preprocessed_commands = [pad_sequences(commands, maxlen=max_len(commands)).astype('int32')
+                                 for commands in batch.command]
+        input_commands = [to_pt(prep_cmd, self.use_cuda) for prep_cmd in preprocessed_commands]
+        q_value = self.model(input_description, input_commands)
+        q_value = torch.stack(q_value, dim=0).squeeze(1)
 
-    def get_command(self, description, commands) -> int:
+        next_description_id = pad_sequences(batch.next_description_id_list,
+                                            maxlen=max_len(batch.next_description_id_list)).astype('int32')
+        next_input_description = to_pt(next_description_id, self.use_cuda)
+        preprocessed_commands = [pad_sequences(commands, maxlen=max_len(commands)).astype('int32')
+                                 for commands in batch.next_commands]
+        input_commands = [to_pt(prep_cmd, self.use_cuda) for prep_cmd in preprocessed_commands]
+        next_q_values_target = self.target_model(next_input_description, input_commands)
+        next_q_values_target = [q_vals.detach() for q_vals in next_q_values_target]
+        next_q_values_model = self.model(next_input_description, input_commands)
+        next_q_values_model = [q_vals.detach() for q_vals in next_q_values_model]
+        next_q_value = [target_q_vals[q_vals.argmax()]
+                        for q_vals, target_q_vals in zip(next_q_values_model, next_q_values_target)]
+        next_q_value = torch.stack(next_q_value, dim=0)
+
+        rewards = torch.stack(batch.reward)  # batch
+        not_done = 1.0 - np.array(batch.done, dtype='float32')  # batch
+        not_done = to_pt(not_done, self.use_cuda, type='float')
+        rewards = rewards + not_done * next_q_value * self.discount_gamma  # batch
+        mask = torch.stack(batch.mask)
+        loss = F.smooth_l1_loss(q_value * mask, rewards * mask)
+
+        #print(f"Q-values: {q_value.detach().cpu().numpy()[::8]}\nRewards: {rewards.cpu().numpy()[::8]}")
+
+        return loss
+
+    def compute_reward(self, obs: List[str], max_score: List[int]):
+        """
+        Compute rewards by agent. Note this is different from what the training/evaluation
+        scripts do. Agent keeps track of scores and other game information for training purpose.
+
+        """
+        # mask = 1 if game is not finished or just finished at current step
+        if len(self.dones) == 1:
+            # it's not possible to finish a game at 0th step
+            mask = [1.0 for _ in self.dones[-1]]
+        else:
+            assert len(self.dones) > 1
+            mask = [1.0 if not self.dones[-2][i] else 0.0 for i in range(len(self.dones[-1]))]
+        mask = np.array(mask, dtype='float32')
+        mask_pt = to_pt(mask, self.use_cuda, type='float')
+        # rewards returned by game engine are always accumulated value the
+        # agent have received. so the reward it gets in the current game step
+        # is the new value minus values at previous step.
+        rewards = np.array(self.scores[-1], dtype='float32')  # batch
+        if len(self.scores) > 1:
+            prev_rewards = np.array(self.scores[-2], dtype='float32')
+            rewards = rewards - prev_rewards
+            rewards += [3 if s == max_s else 0 for s, max_s in zip(self.scores[-1], max_score)]
+        rewards += [-2 if 'lost' in f else 0 for f in obs]
+        rewards_pt = to_pt(rewards, self.use_cuda, type='float')
+        return rewards, rewards_pt, mask, mask_pt
+
+    def get_commands(self, description, commands) -> List[int]:
         q_values = self.model(description, commands)
-        command_idx = q_values.argmax().item()
-        return command_idx
+        command_ids = [q_vs.argmax().item() for q_vs in q_values]
+        return command_ids
 
     def get_game_state_info(self, obs: List[str], infos: [Dict[str, List[Any]]]):
         inventory_token_list = [preproc(item, tokenizer=self.nlp) for item in infos["inventory"]]
@@ -118,25 +247,31 @@ class CustomAgent:
                          i + [self.SEP_id] + r
                          for (d, i, r) in zip(description_id_list, inventory_id_list, recipe_id_list)]
         input_description = pad_sequences(state_id_list, maxlen=max_len(state_id_list)).astype('int32')
-        # TODO: re-write for Pytorch 1 style device assignment
-        input_description = to_pt(input_description)
+        input_description = to_pt(input_description, self.use_cuda)
         return input_description, description_id_list
 
     def preprocess_commands(self, commands):
         preprocessed_commands = []
+        input_commands = []
         for commands_list in commands:
             commands_tokens = [preproc(item, tokenizer=self.nlp) for item in commands_list]
             commands_ids = [_words_to_ids(tokens, self.word2id) for tokens in commands_tokens]
+            preprocessed_commands.append(commands_ids)
             commands_description = pad_sequences(commands_ids, maxlen=max_len(commands_ids)).astype('int32')
-            commands_description = to_pt(commands_description)
-            preprocessed_commands.append(commands_description)
-        return preprocessed_commands
+            commands_description = to_pt(commands_description, self.use_cuda)
+            input_commands.append(commands_description)
+        return input_commands, preprocessed_commands
 
     def _init(self, obs: List[str], infos: Dict[str, List[Any]]) -> None:
         self._episode_started = True
         self.scores = []
         self.dones = []
-        self.prev_actions = ["" for _ in range(len(obs))]
+        self.prev_command = ["" for _ in range(len(obs))]
+        self.episode_steps = 0
+
+    def finish(self):
+        # TODO: update epsilon here
+        self.num_episodes += 1
 
     def _load_vocab(self, vocab_file: str) -> None:
         with open(vocab_file, "r") as fp:
@@ -204,6 +339,7 @@ class CustomAgent:
         request_infos.description = True
         request_infos.inventory = True
         request_infos.entities, request_infos.verbs = True, True
+        request_infos.max_score = True
         request_infos.extras = ["recipe"]
         request_infos.admissible_commands = True
         return request_infos

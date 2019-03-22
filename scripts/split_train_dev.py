@@ -18,6 +18,8 @@ def split_train_dev(train_data_path: str,
     folder into dev folder. File sampling is random
     :param train_data_path: path to the folder with training data
     :param dev_data_path: path to the folder where dev data would be stored.
+    :param valid_frac: fraction of data for validation
+    :param seed: random seed
     """
     print(f"Do you really want to create validation data from {train_data_path} and store it in {dev_data_path}\n"
           f"Be aware that game files will be MOVED from the source folder to the target folder!\n"

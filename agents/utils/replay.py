@@ -132,7 +132,6 @@ class BinaryPrioritizeReplayMemory(AbstractReplayMemory):
             prior_samples = random.sample(self.prior_buffer, prior_size)
             secondary_samples = random.sample(self.secondary_buffer, secondary_size)
             samples = prior_samples + secondary_samples
-            random.shuffle(samples)
             return samples
 
     def __len__(self) -> int:
@@ -152,7 +151,7 @@ class TernaryPrioritizeReplayMemory(AbstractReplayMemory):
         self.pos_prior_buffer = []
         self.pos_prior_position = 0
         self.neg_prior_buffer = []
-        self.neg_prior_pos = 0
+        self.neg_prior_position = 0
         self.prior_capacity = int(self.capacity * self.priority_fraction) // 2
         self.secondary_buffer = []
         self.secondary_position = 0
@@ -180,7 +179,6 @@ class TernaryPrioritizeReplayMemory(AbstractReplayMemory):
             neg_prior_samples = random.sample(self.neg_prior_buffer, prior_size)
             secondary_samples = random.sample(self.secondary_buffer, secondary_size)
             samples = pos_prior_samples + neg_prior_samples + secondary_samples
-            random.shuffle(samples)
             return samples
 
     def _push_prior(self, transition: NamedTuple):
@@ -200,3 +198,13 @@ class TernaryPrioritizeReplayMemory(AbstractReplayMemory):
             self.secondary_buffer.append(None)
         self.secondary_buffer[self.secondary_position] = transition
         self.secondary_position = (self.secondary_position + 1) % self.secondary_capacity
+
+    def __len__(self) -> int:
+        return len(self.pos_prior_buffer) + len(self.neg_prior_buffer) + len(self.secondary_buffer)
+
+    def get_len_prior(self) -> int:
+        return len(self.pos_prior_buffer) + len(self.neg_prior_buffer)
+
+    def get_len_secondary(self) -> int:
+        return len(self.secondary_buffer)
+
