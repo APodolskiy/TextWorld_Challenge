@@ -26,7 +26,7 @@ def idx_select(collection: List, indices: List, reversed_indices=False) -> List:
     """
     performs fancy indexing
     """
-    if not indices:
+    if len(indices) == 0 or indices is None:
         return []
     if isinstance(indices[0], bool):
         if reversed_indices:
