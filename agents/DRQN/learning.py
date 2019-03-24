@@ -10,8 +10,9 @@ import torch
 from torch.nn.functional import smooth_l1_loss
 from torch.optim import Adam
 
-from agents.DRQN.custom_agent import Transition
+from agents.utils.types import Transition
 from agents.utils.replay import BinaryPrioritizeReplayMemory
+from agents.utils.utils import idx_select
 
 learning_step = 1
 
@@ -48,22 +49,23 @@ def learn(
             batch = Transition(*zip(*replay_buffer.sample(batch_size)))
             policy_net.train()
             q_values_selected_actions = torch.cat(
-                policy_net(batch.previous_state, batch.action)
+                policy_net(batch.previous_state, batch.action, batch.recipe)
             )
 
             non_terminal_idxs = (~array(batch.done)).nonzero()[0]
             next_state_values = torch.zeros(len(batch.reward), device=policy_net.device)
 
-            next_non_final_states = [batch.next_state[idx] for idx in non_terminal_idxs]
-            next_non_final_allowed_actions = [
-                batch.allowed_actions[idx] for idx in non_terminal_idxs
-            ]
+            next_non_final_states = idx_select(batch.next_state, non_terminal_idxs)
+            next_non_final_allowed_actions = idx_select(
+                batch.allowed_actions, non_terminal_idxs
+            )
+            recipes = idx_select(batch.recipe, non_terminal_idxs)
             policy_net.train()
             target_net.eval()
             # Double DQN here
             with torch.no_grad():
                 next_state_q_values = policy_net(
-                    next_non_final_states, next_non_final_allowed_actions
+                    next_non_final_states, next_non_final_allowed_actions, recipes
                 )
                 best_q_value_idxs = [
                     q_values.argmax().item() for q_values in next_state_q_values
@@ -75,7 +77,7 @@ def learn(
                     )
                 ]
                 next_state_values[non_terminal_idxs] = torch.cat(
-                    target_net(next_non_final_states, selected_actions)
+                    target_net(next_non_final_states, selected_actions, recipes)
                 )
             expected_values = (
                 torch.tensor(batch.reward, device=q_values_selected_actions.device)
@@ -101,16 +103,16 @@ def learn(
                     torch.save(policy_net.state_dict(), model_path)
 
                 writer.add_scalar("train/loss", loss.item(), learning_step)
-                writer.add_histogram(
-                    "train/learner_target_net_weights",
-                    target_net.hidden_to_scores.weight.clone().detach().cpu().numpy(),
-                    learning_step,
-                )
-                writer.add_histogram(
-                    "train/learner_policy_net_weights",
-                    policy_net.hidden_to_scores.weight.clone().detach().cpu().numpy(),
-                    learning_step,
-                )
+                # writer.add_histogram(
+                #     "train/learner_target_net_weights",
+                #     target_net.hidden_to_scores.weight.clone().detach().cpu().numpy(),
+                #     learning_step,
+                # )
+                # writer.add_histogram(
+                #     "train/learner_policy_net_weights",
+                #     policy_net.hidden_to_scores.weight.clone().detach().cpu().numpy(),
+                #     learning_step,
+                # )
             learning_step += 1
             info(f"Done learning step, loss={loss.item()}")
 

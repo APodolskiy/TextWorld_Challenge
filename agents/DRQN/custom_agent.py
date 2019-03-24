@@ -1,26 +1,15 @@
-from numpy import random
-from collections import namedtuple, defaultdict
+from collections import defaultdict
 from typing import List, Dict, Any
 
+from numpy import random
 from textworld import EnvInfos
+from torch.nn.functional import softmax
 
-from agents.DRQN.utils import clean_text, idx_select
 from agents.utils.params import Params
-
-State = namedtuple("State", ("description", "feedback", "inventory", "prev_action"))
-
-Transition = namedtuple(
-    "Transition",
-    (
-        "previous_state",
-        "next_state",
-        "action",
-        "reward",
-        "exploration_bonus",
-        "done",
-        "allowed_actions",
-    ),
-)
+from agents.utils.parsing import get_missing_ingredients_from_inventory, parse_inventory
+from agents.utils.tokenization import SpacyVectorizer
+from agents.utils.types import Transition, HistoryElement
+from agents.utils.utils import clean_text, idx_select
 
 
 class BaseQlearningAgent:
@@ -34,6 +23,7 @@ class BaseQlearningAgent:
         self.batch_size = params.get("n_parallel_envs")
         self.net = net
         self.eps_scheduler = eps_scheduler
+        self.vectorizer = SpacyVectorizer()
         self.reset()
         self._episode_has_started = True
 
@@ -63,20 +53,20 @@ class BaseQlearningAgent:
         """ Initialize the agent. """
         self._initialized = True
 
-    def _start_episode(self, obs: List[str], infos: Dict[str, List[Any]]) -> None:
+    def start_episode(self, infos) -> None:
         """
         Prepare the agent for the upcoming episode.
-
         Arguments:
-            obs: Initial feedback for each game.
             infos: Additional information for each game.
         """
-        if not self._initialized:
-            self._init()
+        from agents.utils.parsing import parse_recipe
 
-        self._episode_has_started = True
-
-        # [You can insert code here.]
+        recipe_text = infos["extra.recipe"][0]
+        ingredients, cooking_steps = parse_recipe(recipe_text)
+        self.ingredients = ingredients
+        self.cooking_steps = self.vectorizer(
+            f" {self.vectorizer.join_symbol} ".join(cooking_steps)
+        )
 
     def _end_episode(self) -> None:
         """
@@ -95,6 +85,8 @@ class BaseQlearningAgent:
         self.prev_cum_rewards = [0 for _ in range(self.batch_size)]
         self.prev_states = None
         self.prev_not_done_idxs = None
+        self.ingredients = None
+        self.cooking_steps = None
         self.visited_states = defaultdict(set)
         self.history = defaultdict(list)
 
@@ -109,6 +101,7 @@ class BaseQlearningAgent:
         infos: Dict[str, List[Any]],
     ):
         self.gamefile = infos.get("gamefile")
+        infos["feedback"] = observations
         infos["is_lost"] = [
             ("You lost!" in o if d else False) for o, d in zip(observations, dones)
         ]
@@ -116,58 +109,68 @@ class BaseQlearningAgent:
         not_done_idxs = idx_select(
             list(range(self.batch_size)), dones, reversed_indices=True
         )
-        batch_admissible_commands = infos["admissible_commands"]
+        batch_admissible_commands = [
+            [self.vectorizer(c) for c in commands]
+            for commands in infos["admissible_commands"]
+        ]
         commands_not_finished = idx_select(batch_admissible_commands, not_done_idxs)
         states = [
-            State(
-                description=clean_text(description, "description"),
-                feedback=clean_text(obs, "feedback"),
-                inventory=clean_text(inventory, "inventory"),
-                prev_action=action,
+            self.vectorize_state(
+                feedback=obs,
+                prev_action=prev_action,
+                prev_cum_reward=prev_cum_reward,
+                infos=infos,
+                infos_index=idx,
             )
-            for description, obs, inventory, action in zip(
-                infos["description"],
-                observations,
-                infos["inventory"],
-                self.prev_actions,
+            for idx, (obs, prev_action, prev_cum_reward) in enumerate(
+                zip(observations, self.prev_actions, self.prev_cum_rewards)
             )
         ]
 
-        if random.random() < self.eps_scheduler.eps:
-            selected_action_idxs = [
-                random.choice(len(adm_com)) for adm_com in commands_not_finished
-            ]
-        else:
-            self.net.eval()
-            if not_done_idxs:
-                q_values = self.net(
-                    idx_select(states, not_done_idxs), commands_not_finished
-                )
-                selected_action_idxs = [q_val.argmax().item() for q_val in q_values]
-            else:
-                selected_action_idxs = []
+        # if random.random() < self.eps_scheduler.eps:
+        #     self.q_values = None
+        #     selected_action_idxs = [
+        #         random.choice(len(adm_com)) for adm_com in commands_not_finished
+        #     ]
+        # else:
+        self.net.eval()
+        if not_done_idxs:
+            self.q_values = self.net(
+                idx_select(states, not_done_idxs), commands_not_finished, self.cooking_steps
+            )
 
-        # self.net.eval()
-        # q_values = self.net(states, batch_admissible_commands)
-        # selected_action_idxs = [softmax(q_val, dim=1).multinomial(1).item() for q_val in q_values]
+            selected_action_idxs = [
+                softmax(q_val / 0.1).multinomial(1).item()
+                for q_val in self.q_values
+            ]
+            # selected_action_idxs = [
+            #     q_val.argmax().item() for q_val in self.q_values
+            # ]
+        else:
+            self.q_values = None
+            selected_action_idxs = []
+
         for not_done_idx, adm_com, sel_act_idx in zip(
-            not_done_idxs, commands_not_finished, selected_action_idxs
+            not_done_idxs,
+            idx_select(infos["admissible_commands"], not_done_idxs),
+            selected_action_idxs,
         ):
             actions[not_done_idx] = adm_com[sel_act_idx]
+
         self.max_reward = infos["max_score"][0]
-        self.update_experience_replay_buffer(
+        self.update_history(
             not_done_idxs=not_done_idxs,
             next_states=states,
             actions=actions,
             batch_admissible_commands=batch_admissible_commands,
             cum_rewards=cum_rewards,
             dones=dones,
-            is_lost=infos["is_lost"],
+            infos=infos,
         )
         self.current_step += 1
         return actions
 
-    def update_experience_replay_buffer(
+    def update_history(
         self,
         not_done_idxs,
         next_states,
@@ -175,69 +178,81 @@ class BaseQlearningAgent:
         batch_admissible_commands,
         cum_rewards,
         dones,
-        is_lost,
+        infos,
     ):
-        if self.prev_states:
-            idx = 0
-            for (
-                previous_state,
-                next_state,
-                action,
-                admissible_commands,
-                cum_reward,
-                prev_cum_reward,
-                done,
-                game_lost,
-            ) in zip(
-                idx_select(self.prev_states, self.prev_not_done_idxs),
-                idx_select(next_states, self.prev_not_done_idxs),
-                idx_select(self.prev_actions, self.prev_not_done_idxs),
-                idx_select(batch_admissible_commands, self.prev_not_done_idxs),
-                idx_select(cum_rewards, self.prev_not_done_idxs),
-                idx_select(self.prev_cum_rewards, self.prev_not_done_idxs),
-                idx_select(dones, self.prev_not_done_idxs),
-                idx_select(is_lost, self.prev_not_done_idxs),
-            ):
-                desc_inventory = next_state.description + next_state.inventory
-                if self.current_step == 1:
-                    self.visited_states[self.gamefile].add(
-                        previous_state.description + previous_state.inventory
-                    )
+        if self.prev_states is not None:
+            for idx, not_done_idx in enumerate(self.prev_not_done_idxs):
+                previous_state = self.prev_states[not_done_idx]
+                next_state = next_states[not_done_idx]
+                action = self.prev_actions[not_done_idx]
+                assert action != "pass"
+                action_idxs = self.vectorizer(action)
+                assert action_idxs
+                admissible_commands = batch_admissible_commands[not_done_idx]
+                cum_reward = cum_rewards[not_done_idx]
+                prev_cum_reward = self.prev_cum_rewards[not_done_idx]
+                game_lost = infos["is_lost"][not_done_idx]
+                done = dones[not_done_idx]
+                inventory = infos["inventory"]
+                desc_inventory = (
+                    infos["description"][not_done_idx] + inventory[not_done_idx]
+                )
+
                 reward, exploration_bonus = self.calculate_rewards(
+                    not_done_idx=not_done_idx,
                     cum_reward=cum_reward,
                     prev_cum_reward=prev_cum_reward,
                     game_lost=game_lost,
                     done=done,
                     state=desc_inventory,
                 )
-                self.visited_states[self.gamefile].add(desc_inventory)
-                self.history[self.prev_not_done_idxs[idx]].append(
-                    Transition(
-                        previous_state=previous_state,
-                        next_state=next_state,
-                        action=action,
-                        allowed_actions=admissible_commands,
-                        exploration_bonus=exploration_bonus,
-                        reward=reward,
-                        done=done,
+                self.visited_states[not_done_idx].add(desc_inventory)
+                transition = Transition(
+                    previous_state=previous_state,
+                    next_state=next_state,
+                    action=action_idxs,
+                    allowed_actions=admissible_commands,
+                    exploration_bonus=exploration_bonus,
+                    reward=reward,
+                    recipe=self.cooking_steps,
+                    done=done,
+                )
+                # TODO: remove assertion
+                assert self.prev_not_done_idxs[idx] == not_done_idx
+                q_values = None
+                actual_infos = {k: v[not_done_idx] for k, v in self.prev_infos.items()}
+                actual_infos["action"] = self.prev_actions[not_done_idx]
+                if self.prev_q_values is not None:
+                    q_values = self.prev_q_values[idx]
+                self.history[not_done_idx].append(
+                    HistoryElement(
+                        transition=transition, q_values=q_values, infos=actual_infos
                     )
                 )
-                idx += 1
+        else:
+            assert self.current_step == 0
+            for idx in range(len(infos)):
+                self.visited_states[idx].add(
+                    infos["description"][0] + infos["inventory"][0]
+                )
         self.prev_states = next_states
         self.prev_actions = actions
         self.prev_not_done_idxs = not_done_idxs
         self.prev_cum_rewards = cum_rewards
+        self.prev_q_values = self.q_values
+        self.prev_infos = infos
 
     def calculate_rewards(
         self,
+        not_done_idx,
         cum_reward: int,
         prev_cum_reward: int,
         game_lost: bool,
         done: bool,
         state: str,
     ):
-        reward = float(cum_reward - prev_cum_reward)
-        exploration_bonus = 0.5 * float(state not in self.visited_states[self.gamefile])
+        reward = float(cum_reward - prev_cum_reward) - 0.2
+        exploration_bonus = 0.5 * float(state not in self.visited_states[not_done_idx])
         if game_lost:
             reward = -1.5
             exploration_bonus = 0.0
@@ -245,3 +260,29 @@ class BaseQlearningAgent:
             reward = 2.0
             exploration_bonus = 0.0
         return reward, exploration_bonus
+
+    def vectorize_state(
+        self, feedback, prev_action, prev_cum_reward, infos, infos_index
+    ):
+        description = clean_text(infos["description"][infos_index], "description")
+        feedback = clean_text(feedback, "feedback")
+        inventory = parse_inventory(infos["inventory"][infos_index])
+        missing_items = get_missing_ingredients_from_inventory(
+            inventory, self.ingredients
+        )
+
+        admissible_commands = infos["admissible_commands"][infos_index]
+        # TODO: hack?
+        description = description.split("=-")[0][3:].strip()
+        state_info = f" {self.vectorizer.join_symbol} ".join(
+            [
+                description,
+                " <S> ".join(admissible_commands),
+                feedback,
+                " <S> ".join(inventory),
+                " <S> ".join(missing_items),
+                prev_action,
+            ]
+        )
+        state_info += f" {self.vectorizer.join_symbol} {prev_cum_reward}"
+        return self.vectorizer(state_info)

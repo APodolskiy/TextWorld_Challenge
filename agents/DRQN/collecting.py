@@ -10,6 +10,8 @@ from tqdm import tqdm
 from agents.DRQN.custom_agent import BaseQlearningAgent
 from tensorboardX import SummaryWriter
 
+from agents.utils.logging import get_sample_history_trace
+
 collecting_step = 1
 
 
@@ -52,6 +54,7 @@ def collect_experience(
                 target_net.load_state_dict(policy_net.state_dict())
 
             obs, infos = env.reset()
+            actor.start_episode(infos)
             actor.train()
 
             dones = [False for _ in range(batch_size)]
@@ -68,25 +71,31 @@ def collect_experience(
                 obs, cumulative_rewards, dones, infos = env.step(command)
             infos["gamefile"] = game_files[0]
             actor.act(obs, cumulative_rewards, dones, infos)
-            assert all([actor.history[i][-1].done for i in range(actor.batch_size)])
+            assert all([actor.history[i][-1].transition.done for i in range(actor.batch_size)])
             for game in actor.history.values():
-                buffer.put(game)
-            actor.reset()
-            actor.eps_scheduler.increase_step()
+                buffer.put([item.transition for item in game])
             if log_dir is not None:
                 writer.add_scalar(
                     "train/avg_reward", numpy.mean(cumulative_rewards), collecting_step
                 )
                 writer.add_scalar("train/avg_steps", numpy.mean(steps), collecting_step)
                 writer.add_scalar("train/eps", actor.eps_scheduler.eps, collecting_step)
-                writer.add_histogram(
-                    "train/actor_target_net_weights",
-                    target_net.hidden_to_scores.weight.clone().detach().cpu().numpy(),
-                    collecting_step,
-                )
-                writer.add_histogram(
-                    "train/actor_policy_net_weights",
-                    policy_net.hidden_to_scores.weight.clone().detach().cpu().numpy(),
-                    collecting_step,
-                )
+
+                if collecting_step % 1 == 0:
+                    with open(log_dir / f"game_{collecting_step}.txt", "w") as f:
+                        trace = get_sample_history_trace(actor.history)
+                        print(trace, file=f)
+
+                # writer.add_histogram(
+                #     "train/actor_target_net_weights",
+                #     target_net.hidden_to_scores.weight.clone().detach().cpu().numpy(),
+                #     collecting_step,
+                # )
+                # writer.add_histogram(
+                #     "train/actor_policy_net_weights",
+                #     policy_net.hidden_to_scores.weight.clone().detach().cpu().numpy(),
+                #     collecting_step,
+                # )
             collecting_step += 1
+            actor.reset()
+            actor.eps_scheduler.increase_step()

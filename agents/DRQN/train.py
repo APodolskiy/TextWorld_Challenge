@@ -1,20 +1,10 @@
 import logging
-from os.path import exists
-from shutil import rmtree
-
-import gym
+import os
 from multiprocessing import Queue
 from pathlib import Path
+from shutil import rmtree
 
-import spacy
-import textworld.gym
-from agents.DRQN.collecting import collect_experience
-from agents.DRQN.custom_agent import BaseQlearningAgent
-from agents.DRQN.learning import learn
-from agents.DRQN.networks.simple_net import SimpleNet
-from agents.utils.eps_scheduler import EpsScheduler
 from agents.utils.params import Params
-from agents.utils.replay import BinaryPrioritizeReplayMemory
 
 logging.basicConfig(level=logging.INFO)
 
@@ -25,7 +15,35 @@ if __name__ == "__main__":
         if f.is_file() and f.suffix == ".ulx"
     ][:1]
 
-    params = Params.from_file("configs/debug_config.jsonnet")
+    logging.info(games)
+
+    if os.environ.get("DEBUG_MODE") != "1":
+        params = Params.from_file("configs/config.jsonnet")
+        logging.info("Starting in TRAIN mode")
+        log_dir = os.environ.get("EXP_NAME", None)
+
+        if log_dir is not None and log_dir != "":
+            log_dir = Path(log_dir)
+            force = os.environ.get("FORCE_OVERWRITE_LOGS", False)
+            if log_dir.exists():
+                if not int(force) == 1:
+                    raise RuntimeError("Already exists, type y to erase")
+                rmtree(log_dir)
+            log_dir.mkdir(parents=True)
+    else:
+        params = Params.from_file("configs/debug_config.jsonnet")
+        logging.info("Starting in DEBUG mode")
+        log_dir = None
+
+    from agents.DRQN.collecting import collect_experience
+    from agents.DRQN.custom_agent import BaseQlearningAgent
+    from agents.DRQN.learning import learn
+    from agents.DRQN.networks.simple_net import SimpleNet
+    from agents.utils.eps_scheduler import EpsScheduler
+    from agents.utils.replay import BinaryPrioritizeReplayMemory
+    import textworld.gym
+    import gym
+
     actor_device = params["training"].pop("actor_device")
     requested_infos = BaseQlearningAgent.select_additional_infos()
     env_id = textworld.gym.register_games(
@@ -40,13 +58,13 @@ if __name__ == "__main__":
         parallel=params["training"]["use_separate_process_envs"],
     )
     env = gym.make(env_id)
-
+    vocab_size = params["training"].pop("vocab_size")
     my_net = SimpleNet(
-        device=actor_device, tokenizer=spacy.load("en_core_web_sm").tokenizer
+        config=params["network"].duplicate(), device=actor_device, vocab_size=vocab_size
     ).to(actor_device)
     learner_device = params["training"].pop("learner_device")
     target_net = SimpleNet(
-        tokenizer=spacy.load("en_core_web_sm").tokenizer, device=learner_device
+        config=params["network"], device=learner_device, vocab_size=vocab_size
     ).to(learner_device)
     target_net.load_state_dict(my_net.state_dict())
     queue = Queue()
@@ -60,10 +78,6 @@ if __name__ == "__main__":
     train_params = params.pop("training")
     eps_params = params.pop("epsilon")
 
-    log_dir = "debug_runs"
-    if exists(log_dir):
-        rmtree(log_dir)
-        Path(log_dir).mkdir(parents=True)
     eps_scheduler = EpsScheduler(eps_params)
     for _ in range(1000):
         collect_experience(
@@ -73,8 +87,8 @@ if __name__ == "__main__":
             game_files=games,
             target_net=target_net,
             policy_net=my_net,
-            log_dir="debug_runs/actor",
-            env=env
+            log_dir=log_dir,
+            env=env,
         )
 
         learn(
@@ -83,5 +97,5 @@ if __name__ == "__main__":
             replay_buffer=replay_buffer,
             queue=queue,
             params=train_params.duplicate(),
-            log_dir="debug_runs/learner",
+            log_dir=log_dir,
         )
