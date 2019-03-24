@@ -26,10 +26,10 @@ def check_agent(game_file, train_params, agent_net):
     obs, infos = env.reset()
     cumulative_rewards = [0]
     dones = [False]
-
     actor = BaseQlearningAgent(
         net=agent_net, params=train_params, eps_scheduler=DeterministicEpsScheduler()
     )
+    actor.start_episode(infos)
 
     print(infos["extra.walkthrough"])
 
@@ -48,7 +48,11 @@ if __name__ == "__main__":
     parser.add_argument("game_file", type=str)
     args = parser.parse_args()
     params = Params.from_file("configs/debug_config.jsonnet")
-    agent = SimpleNet(device="cpu", tokenizer=spacy.load("en_core_web_sm").tokenizer)
+    agent = SimpleNet(
+        config=params["network"],
+        device="cpu",
+        vocab_size=params["training"]["vocab_size"],
+    )
     agent.load_state_dict(torch.load(params["training"]["model_path"]))
     game_file = f"games/train_sample/{args.game_file}"
     check_agent(

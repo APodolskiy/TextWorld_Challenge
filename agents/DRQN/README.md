@@ -9,5 +9,5 @@ Work in progress!
 
 ## To run training on one sample game
 
-* Change configs/debug_config.jsonnet
-* run `debug.py`
+* Change configs/config.jsonnet
+* run `train.py`
