@@ -50,17 +50,19 @@ class CustomAgent:
             self.model.cuda()
             self.target_model.cuda()
 
-        self.replay_memory = TernaryPrioritizeReplayMemory(capacity=500_000, priority_fraction=0.5)
+        self.replay_config = self.config["replay"]
+        self.replay_memory = TernaryPrioritizeReplayMemory(capacity=self.replay_config["capacity"],
+                                                           priority_fraction=self.replay_config["priority_fraction"])
 
         self.nlp = spacy.load('en', disable=['ner', 'parser', 'tagger'])
 
-        self.update_per_k_game_steps = 10
-        self.update_target = 50
-        self.replay_batch_size = 64
-        self.clip_grad_norm = 10
-        self.discount_gamma = 0.95
+        self.update_per_k_game_steps = self.config["training"]["update_freq"]
+        self.update_target = self.config["training"]["target_net_update_freq"]
+        self.replay_batch_size = self.config["training"]["replay_batch-size"]
+        self.clip_grad_norm = self.config["training"]["clip_grad_norm"]
+        self.discount_gamma = self.config["training"]["discount_gamma"]
 
-        self.eps_scheduler = LinearScheduler({})
+        self.eps_scheduler = LinearScheduler(self.config["exploration"])
         self.act_steps = 0
         self.episode_steps = 0
         self.num_episodes = 0
