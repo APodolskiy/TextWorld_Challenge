@@ -5,10 +5,10 @@ training: {
     n_epochs_collection: 5,
     n_parallel_envs: 8,
     use_separate_process_envs: true,
-    actor_device: "cuda",
+    actor_device: "cuda:5",
     target_net_update_freq: 10,
     # learner params
-    learner_device: "cuda",
+    learner_device: "cuda:6",
     batch_size: 64,
     lr: 1e-3,
     gamma: 0.95,

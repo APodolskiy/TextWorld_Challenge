@@ -7,7 +7,7 @@ import torch
 from allennlp.modules.seq2seq_encoders import PytorchSeq2SeqWrapper
 from allennlp.modules.seq2vec_encoders import PytorchSeq2VecWrapper
 from torch import tensor
-from torch.nn import Module, Embedding, Linear, ELU, LSTM
+from torch.nn import Module, Embedding, Linear, ELU, LSTM, GRU
 from torch.nn.functional import cosine_similarity, softmax
 from torch.nn.utils.rnn import pad_sequence, pack_padded_sequence
 
@@ -34,6 +34,14 @@ class SimpleNet(Module):
             )
         )
 
+        self.state_recurrence = PytorchSeq2VecWrapper(
+            GRU(
+                batch_first=True,
+                input_size=self.hidden_size,
+                hidden_size=self.hidden_size,
+            )
+        )
+
         self.action_embedder = PytorchSeq2VecWrapper(
             LSTM(
                 batch_first=True, input_size=self.emb_dim, hidden_size=self.hidden_size
@@ -55,53 +63,91 @@ class SimpleNet(Module):
         self.elu = ELU()
         self.device = device
 
-    def forward(self, states: List[List[int]], actions: List[List[int]], recipe):
-        state_batch = []
-        for state in states:
-            state_batch.append(torch.tensor(state, device=self.device))
-
-        state_batch = pad_sequence(state_batch, batch_first=True)
-        state_mask = state_batch != 0
-        state_seq_embs = self.state_embedder(self.embedding(state_batch), state_mask)
-
-        recipe = torch.tensor(recipe, device=self.device).view(1, -1)
-        recipe_emb = self.recipe_embedder(self.embedding(recipe), None).unsqueeze(1)
-
-        att_weigths = (recipe_emb * state_seq_embs / self.d).sum(dim=2)
+    def embed_states(self, states, recipe):
+        state_mask = states != 0
+        state_seq_embs = self.state_embedder(self.embedding(states), state_mask)
+        att_weigths = (recipe * state_seq_embs / self.d).sum(dim=2)
         att_weigths[~state_mask] = float("-inf")
         att_probs = softmax(att_weigths, dim=1)
-        state_embs = (att_probs.unsqueeze(2) * state_seq_embs).sum(dim=1)
+        return (att_probs.unsqueeze(2) * state_seq_embs).sum(dim=1)
 
-        actions_batch = []
-        for state_actions in actions:
-            if isinstance(state_actions[0], int):
-                state_actions = [state_actions]
-            actions_padded = pad_sequence(
-                [torch.tensor(a, device=self.device) for a in state_actions],
-                batch_first=True,
+    def forward(
+        self,
+        states: List[List[int]],
+        actions: List[List[int]],
+        recipe,
+        hidden_states,
+        mode,
+    ):
+        if not hidden_states is None:
+            assert hidden_states.size(1) == len(states)
+
+        recipe = torch.tensor(recipe, device=self.device)
+        assert recipe.ndimension() == 1
+        recipe = recipe.view(1, -1)
+        recipe_emb = self.recipe_embedder(self.embedding(recipe), None).unsqueeze(1)
+
+        assert mode in ["collect", "learn"]
+
+        if mode == "collect":
+            # states: [s1, ..., sn]
+            state_batch = []
+            for state in states:
+                state_batch.append(torch.tensor(state, device=self.device))
+
+            state_batch = pad_sequence(state_batch, batch_first=True)
+            state_embs = self.embed_states(state_batch, recipe_emb)
+            final_state_embs = self.state_recurrence(
+                state_embs.unsqueeze(1), None, hidden_states
             )
-            act_embs = self.action_embedder(
-                self.embedding(actions_padded), actions_padded != 0
+            actions_batch = []
+            for state_actions in actions:
+                if isinstance(state_actions[0], int):
+                    state_actions = [state_actions]
+                actions_padded = pad_sequence(
+                    [torch.tensor(a, device=self.device) for a in state_actions],
+                    batch_first=True,
+                )
+                act_embs = self.action_embedder(
+                    self.embedding(actions_padded), actions_padded != 0
+                )
+                actions_batch.append(act_embs)
+
+            q_values = []
+            for s, actions in zip(final_state_embs, actions_batch):
+                s = s.unsqueeze(0)
+                s_hidden = self.state_to_hidden(self.elu(s))
+                act_hidden = self.action_to_hidden(self.elu(actions))
+
+                q_values.append(3 * cosine_similarity(s_hidden, act_hidden, dim=1))
+
+            return final_state_embs, q_values
+        else:
+            # states: [(s_1, s_2 ... s_k)_1, ... (s_1, s_2 ... s_k)_n]
+            sequences = []
+            for seq_states in states:
+                if len(seq_states) < 8:
+                    seq_states = [[0] for _ in range(8 - len(seq_states))] + seq_states
+                sequences.append(
+                    pad_sequence(
+                        [torch.tensor(s, device=self.device) for s in seq_states],
+                        batch_first=False,
+                    )
+                )
+            state_batch = pad_sequence(sequences, batch_first=True)
+            # batch_size X seq_len X state_len
+            state_batch = state_batch.permute(0, 2, 1)
+
+            embedded_state = []
+            for seq_step in state_batch.split(1, dim=1):
+                seq_step = seq_step.squeeze(1)
+                state_embs = self.embed_states(seq_step, recipe_emb).unsqueeze(1)
+                embedded_state.append(state_embs)
+            state_embs = torch.cat(embedded_state, dim=1)
+            final_state_embs = self.state_recurrence(
+                state_embs, None, hidden_states
             )
-            actions_batch.append(act_embs)
-
-        q_values = []
-        for s, actions in zip(state_embs, actions_batch):
-            s = s.unsqueeze(0)
-            # s_hidden = self.state_to_hidden2(
-            #     self.elu(self.state_to_hidden(self.elu(s)))
-            # )
-            # act_hidden = self.action_to_hidden2(
-            #     self.elu(self.action_to_hidden(self.elu(act_state)))
-            # )
-            s_hidden = self.state_to_hidden(self.elu(s))
-            act_hidden = self.action_to_hidden(self.elu(actions))
-
-            q_values.append(
-                3 * cosine_similarity(s_hidden, act_hidden, dim=1)
-            )
-
-        return q_values
+            return
 
     def embed(self, data_batch):
         orig_lens = torch.tensor([len(s) for s in data_batch])
