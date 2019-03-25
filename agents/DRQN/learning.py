@@ -49,58 +49,70 @@ def learn(
                 break
         try:
             sample = replay_buffer.sample(batch_size)
-            previous_state = [[item.previous_state for item in seq] for seq in sample]
-            action = [[item.action for item in seq] for seq in sample]
             recipe = sample[0][0].recipe
-            policy_net.train()
-            q_values_selected_actions = torch.cat(
-                policy_net(previous_state, action, recipe, mode="learn", hidden_states=None)
-            )
+            policy_net_hidden_states = None
+            for step in range(chunk_size - 1):
+                previous_state = [seq[step].previous_step for seq in sample]
+                action = [seq[step].action for seq in sample]
 
-            non_terminal_idxs = (~array(batch.done)).nonzero()[0]
-            next_state_values = torch.zeros(len(batch.reward), device=policy_net.device)
-
-            next_non_final_states = idx_select(batch.next_state, non_terminal_idxs)
-            next_non_final_allowed_actions = idx_select(
-                batch.allowed_actions, non_terminal_idxs
-            )
-            # recipes = idx_select(batch.recipe, non_terminal_idxs)
-            policy_net.train()
-            target_net.eval()
-            # Double DQN here
-            with torch.no_grad():
-                next_state_q_values = policy_net(
-                    next_non_final_states, next_non_final_allowed_actions, recipe
+                policy_net.train()
+                policy_net_hidden_states, q_values = policy_net(
+                    previous_state,
+                    action,
+                    recipe,
+                    mode="learn",
+                    hidden_states=policy_net_hidden_states,
                 )
-                best_q_value_idxs = [
-                    q_values.argmax().item() for q_values in next_state_q_values
-                ]
-                selected_actions = [
-                    allowed_actions[idx]
-                    for idx, allowed_actions in zip(
-                        best_q_value_idxs, next_non_final_allowed_actions
+                q_values_selected_actions = torch.cat(q_values)
+
+                exit(-1)
+
+                non_terminal_idxs = (~array(batch.done)).nonzero()[0]
+                next_state_values = torch.zeros(
+                    len(batch.reward), device=policy_net.device
+                )
+
+                next_non_final_states = idx_select(batch.next_state, non_terminal_idxs)
+                next_non_final_allowed_actions = idx_select(
+                    batch.allowed_actions, non_terminal_idxs
+                )
+                # recipes = idx_select(batch.recipe, non_terminal_idxs)
+                policy_net.train()
+                target_net.eval()
+                # Double DQN here
+                with torch.no_grad():
+                    next_state_q_values = policy_net(
+                        next_non_final_states, next_non_final_allowed_actions, recipe
                     )
-                ]
-                next_state_values[non_terminal_idxs] = torch.cat(
-                    target_net(next_non_final_states, selected_actions, recipe)
-                )
-            expected_values = (
+                    best_q_value_idxs = [
+                        q_values.argmax().item() for q_values in next_state_q_values
+                    ]
+                    selected_actions = [
+                        allowed_actions[idx]
+                        for idx, allowed_actions in zip(
+                            best_q_value_idxs, next_non_final_allowed_actions
+                        )
+                    ]
+                    next_state_values[non_terminal_idxs] = torch.cat(
+                        target_net(next_non_final_states, selected_actions, recipe)
+                    )
+                expected_values = (
                     torch.tensor(batch.reward, device=q_values_selected_actions.device)
                     + torch.tensor(
-                batch.exploration_bonus, device=q_values_selected_actions.device
-            )
+                        batch.exploration_bonus, device=q_values_selected_actions.device
+                    )
                     + gamma * next_state_values
-            )
+                )
 
-            optimizer.zero_grad()
-            loss = smooth_l1_loss(q_values_selected_actions, expected_values)
-            loss.backward()
-            optimizer.step()
+                optimizer.zero_grad()
+                loss = smooth_l1_loss(q_values_selected_actions, expected_values)
+                loss.backward()
+                optimizer.step()
 
-            t1 = q_values_selected_actions.cpu().detach().numpy().flatten()
-            t2 = expected_values.cpu().detach().numpy().flatten()
-            print(f"Predicted: {t1[::4]}")
-            print(f"Should be: {t2[::4]}")
+                t1 = q_values_selected_actions.cpu().detach().numpy().flatten()
+                t2 = expected_values.cpu().detach().numpy().flatten()
+                print(f"Predicted: {t1[::4]}")
+                print(f"Should be: {t2[::4]}")
 
             if log_dir is not None:
                 if learning_step % saving_freq == 0:
