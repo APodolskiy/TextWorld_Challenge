@@ -24,7 +24,7 @@ def clean_text(s, type_):
 
 def idx_select(collection: List, indices: List, reversed_indices=False) -> List:
     """
-    performs fancy indexing
+    Performs fancy indexing
     """
     if len(indices) == 0 or indices is None:
         return []

@@ -77,7 +77,6 @@ class SimpleNet(Module):
         actions: List[List[int]],
         recipe,
         hidden_states,
-        mode,
     ):
         if not hidden_states is None:
             assert hidden_states.size(1) == len(states)
