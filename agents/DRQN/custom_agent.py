@@ -102,6 +102,7 @@ class BaseQlearningAgent:
         dones: List[bool],
         infos: Dict[str, List[Any]],
     ):
+        # TODO: refactor S NULYA - keep only useful states
         self.gamefile = infos.get("gamefile")
         infos["feedback"] = observations
         infos["is_lost"] = [
@@ -145,9 +146,10 @@ class BaseQlearningAgent:
                 hidden_states=(
                     None
                     if self.hidden_state is None
-                    else torch.stack(idx_select(self.hidden_state, not_done_idxs), dim=0).unsqueeze(0)
+                    else torch.stack(
+                        idx_select(self.hidden_state, not_done_idxs), dim=0
+                    ).unsqueeze(0)
                 ),
-                mode="collect",
             )
             self.hidden_state = ["None" for _ in range(len(observations))]
             for idx, state in zip(not_done_idxs, new_hidden_states):
@@ -210,7 +212,6 @@ class BaseQlearningAgent:
                 desc_inventory = (
                     infos["description"][not_done_idx] + inventory[not_done_idx]
                 )
-
                 reward, exploration_bonus = self.calculate_rewards(
                     not_done_idx=not_done_idx,
                     cum_reward=cum_reward,
