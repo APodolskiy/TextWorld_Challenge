@@ -27,7 +27,7 @@ if __name__ == "__main__":
             force = os.environ.get("FORCE_OVERWRITE_LOGS", False)
             if log_dir.exists():
                 if not int(force) == 1:
-                    raise RuntimeError("Already exists, type y to erase")
+                    raise RuntimeError("Already exists, aborting")
                 rmtree(log_dir)
             log_dir.mkdir(parents=True)
     else:
@@ -40,7 +40,7 @@ if __name__ == "__main__":
     from agents.DRQN.learning import learn
     from agents.DRQN.networks.simple_net import SimpleNet
     from agents.utils.eps_scheduler import EpsScheduler
-    from agents.utils.replay import BinaryPrioritizeReplayMemory
+    from agents.utils.replay import BinaryPrioritizeReplayMemory, SeqTernaryPrioritizeReplayMemory
     import textworld.gym
     import gym
 
@@ -70,7 +70,7 @@ if __name__ == "__main__":
     queue = Queue()
 
     replay_memory_params = params.pop("replay_memory")
-    replay_buffer = BinaryPrioritizeReplayMemory(
+    replay_buffer = SeqTernaryPrioritizeReplayMemory(
         capacity=replay_memory_params.pop("capacity"),
         priority_fraction=replay_memory_params.pop("priority_fraction"),
     )

@@ -119,9 +119,13 @@ class BinaryPrioritizeReplayMemory(AbstractReplayMemory):
         if self.priority_fraction == 0.0:
             is_prior = False
         if is_prior:
-            self.prior_position = self._push(transition, self.prior_buffer, self.prior_position)
+            self.prior_position = self._push(
+                transition, self.prior_buffer, self.prior_position
+            )
         else:
-            self.secondary_position = self._push(transition, self.secondary_buffer, self.secondary_position)
+            self.secondary_position = self._push(
+                transition, self.secondary_buffer, self.secondary_position
+            )
 
     def _push(self, transition: Transition, buffer, position):
         if len(buffer) < self.prior_capacity:
@@ -159,6 +163,154 @@ class BinaryPrioritizeReplayMemory(AbstractReplayMemory):
 
     def get_len_prior(self) -> int:
         return len(self.prior_buffer)
+
+    def get_len_secondary(self) -> int:
+        return len(self.secondary_buffer)
+
+
+class SeqTernaryPrioritizeReplayMemory(AbstractReplayMemory):
+    def __init__(self, capacity: int = 100_000, priority_fraction: float = 0.0):
+        super().__init__(capacity=capacity)
+        self.priority_fraction = priority_fraction
+        self.good_seqs_buffer = []
+        self.good_buffer_position = 0
+        self.bad_seqs_buffer = []
+        self.bad_buffer_position = 0
+        self.neutral_seqs_buffer = []
+        self.neutral_buffer_position = 0
+        self.prior_capacity = int(self.capacity * priority_fraction) // 2
+        self.secondary_capacity = self.capacity - 2 * self.prior_capacity
+
+    def push(self, transitions: List[Transition]):
+        is_good = False
+        is_bad = False
+        for transition in transitions:
+            if transition.reward > 0.0:
+                is_good = True
+            elif transition.reward < 0.0:
+                is_bad = True
+        if is_good:
+            self.good_buffer_position = self._push(
+                transitions=transitions,
+                position=self.good_buffer_position,
+                buffer=self.good_seqs_buffer,
+                capacity=self.prior_capacity,
+            )
+        if is_bad:
+            self.bad_buffer_position = self._push(
+                transitions=transitions,
+                position=self.bad_buffer_position,
+                buffer=self.bad_seqs_buffer,
+                capacity=self.prior_capacity,
+            )
+        if not is_good and not is_bad:
+            self.neutral_buffer_position = self._push(
+                transitions=transitions,
+                position=self.neutral_buffer_position,
+                buffer=self.neutral_seqs_buffer,
+                capacity=self.secondary_capacity,
+            )
+
+    def _push(self, transitions, buffer, position, capacity):
+        if len(buffer) < capacity:
+            buffer.append(None)
+        buffer[position] = transitions
+        return (position + 1) % capacity
+
+    def sample(self, batch_size: int):
+        if self.priority_fraction == 0.0:
+            batch_size = min(batch_size, len(self.neutral_seqs_buffer))
+            return random.sample(self.neutral_seqs_buffer, batch_size)
+        else:
+            good_size = min(
+                int(batch_size * self.priority_fraction) // 2,
+                len(self.good_seqs_buffer),
+            )
+            bad_size = min(
+                int(batch_size * self.priority_fraction) // 2, len(self.bad_seqs_buffer)
+            )
+            secondary_size = min(
+                batch_size - bad_size - good_size, len(self.neutral_seqs_buffer)
+            )
+            pos_prior_samples = random.sample(self.good_seqs_buffer, good_size)
+            neg_prior_samples = random.sample(self.bad_seqs_buffer, bad_size)
+            secondary_samples = random.sample(self.neutral_seqs_buffer, secondary_size)
+            samples = pos_prior_samples + neg_prior_samples + secondary_samples
+            return samples
+
+
+class TernaryPrioritizeReplayMemory(AbstractReplayMemory):
+    def __init__(self, capacity: int = 100_000, priority_fraction: float = 0.0):
+        super(TernaryPrioritizeReplayMemory, self).__init__(capacity=capacity)
+        self.priority_fraction = priority_fraction
+        self.pos_prior_buffer = []
+        self.pos_prior_position = 0
+        self.neg_prior_buffer = []
+        self.neg_prior_position = 0
+        self.prior_capacity = int(self.capacity * self.priority_fraction) // 2
+        self.secondary_buffer = []
+        self.secondary_position = 0
+        self.secondary_capacity = self.capacity - 2 * self.prior_capacity
+
+    def push(self, transition: NamedTuple):
+        if self.priority_fraction == 0.0:
+            is_prior = False
+        else:
+            is_prior = transition.reward != 0.0
+        if is_prior:
+            self._push_prior(transition)
+        else:
+            self._push_secondary(transition)
+
+    def sample(self, batch_size: int):
+        if self.priority_fraction == 0.0:
+            batch_size = min(batch_size, len(self.secondary_buffer))
+            return random.sample(self.secondary_buffer, batch_size)
+        else:
+            prior_size = min(
+                int(batch_size * self.priority_fraction) // 2,
+                min(len(self.pos_prior_buffer), len(self.neg_prior_buffer)),
+            )
+            secondary_size = min(batch_size - prior_size, len(self.secondary_buffer))
+            pos_prior_samples = random.sample(self.pos_prior_buffer, prior_size)
+            neg_prior_samples = random.sample(self.neg_prior_buffer, prior_size)
+            secondary_samples = random.sample(self.secondary_buffer, secondary_size)
+            samples = pos_prior_samples + neg_prior_samples + secondary_samples
+            return samples
+
+    def _push_prior(self, transition: NamedTuple):
+        if transition.reward > 0.0:
+            if len(self.pos_prior_buffer) < self.prior_capacity:
+                self.pos_prior_buffer.append(None)
+            self.pos_prior_buffer[self.pos_prior_position] = transition
+            self.pos_prior_position = (
+                self.pos_prior_position + 1
+            ) % self.prior_capacity
+        else:
+            if len(self.neg_prior_buffer) < self.prior_capacity:
+                self.neg_prior_buffer.append(None)
+            self.neg_prior_buffer[self.neg_prior_position] = transition
+            self.neg_prior_position = (
+                self.neg_prior_position + 1
+            ) % self.prior_capacity
+
+    def _push_secondary(self, transition: NamedTuple):
+        if len(self.secondary_buffer) < self.secondary_capacity:
+            self.secondary_buffer.append(None)
+        self.secondary_buffer[self.secondary_position] = transition
+        self.secondary_position = (
+            self.secondary_position + 1
+        ) % self.secondary_capacity
+
+    def __len__(self) -> int:
+        return (
+            len(self.pos_prior_buffer)
+            + len(self.neg_prior_buffer)
+            + len(self.secondary_buffer)
+        )
+
+    def get_len_prior(self) -> int:
+        return len(self.pos_prior_buffer) + len(self.neg_prior_buffer)
 
     def get_len_secondary(self) -> int:
         return len(self.secondary_buffer)

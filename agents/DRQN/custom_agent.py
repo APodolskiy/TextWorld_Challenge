@@ -1,3 +1,4 @@
+import torch
 from collections import defaultdict
 from typing import List, Dict, Any
 
@@ -87,6 +88,7 @@ class BaseQlearningAgent:
         self.prev_not_done_idxs = None
         self.ingredients = None
         self.cooking_steps = None
+        self.hidden_state = None
         self.visited_states = defaultdict(set)
         self.history = defaultdict(list)
 
@@ -135,13 +137,24 @@ class BaseQlearningAgent:
         # else:
         self.net.eval()
         if not_done_idxs:
-            self.q_values = self.net(
-                idx_select(states, not_done_idxs), commands_not_finished, self.cooking_steps
+            # TODO: update hidden state
+            new_hidden_states, self.q_values = self.net(
+                idx_select(states, not_done_idxs),
+                commands_not_finished,
+                self.cooking_steps,
+                hidden_states=(
+                    None
+                    if self.hidden_state is None
+                    else torch.stack(idx_select(self.hidden_state, not_done_idxs), dim=0).unsqueeze(0)
+                ),
+                mode="collect",
             )
+            self.hidden_state = ["None" for _ in range(len(observations))]
+            for idx, state in zip(not_done_idxs, new_hidden_states):
+                self.hidden_state[idx] = state
 
             selected_action_idxs = [
-                softmax(q_val / 0.1).multinomial(1).item()
-                for q_val in self.q_values
+                softmax(q_val / 0.1).multinomial(1).item() for q_val in self.q_values
             ]
             # selected_action_idxs = [
             #     q_val.argmax().item() for q_val in self.q_values
@@ -251,7 +264,7 @@ class BaseQlearningAgent:
         done: bool,
         state: str,
     ):
-        reward = float(cum_reward - prev_cum_reward) - 0.2
+        reward = float(cum_reward - prev_cum_reward)
         exploration_bonus = 0.5 * float(state not in self.visited_states[not_done_idx])
         if game_lost:
             reward = -1.5
@@ -259,6 +272,7 @@ class BaseQlearningAgent:
         if done and cum_reward == self.max_reward:
             reward = 2.0
             exploration_bonus = 0.0
+        # exploration_bonus = 0.0
         return reward, exploration_bonus
 
     def vectorize_state(

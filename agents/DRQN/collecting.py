@@ -81,7 +81,7 @@ def collect_experience(
                 writer.add_scalar("train/avg_steps", numpy.mean(steps), collecting_step)
                 writer.add_scalar("train/eps", actor.eps_scheduler.eps, collecting_step)
 
-                if collecting_step % 1 == 0:
+                if collecting_step % 5 == 0:
                     with open(log_dir / f"game_{collecting_step}.txt", "w") as f:
                         trace = get_sample_history_trace(actor.history)
                         print(trace, file=f)
