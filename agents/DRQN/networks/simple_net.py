@@ -87,67 +87,66 @@ class SimpleNet(Module):
         recipe = recipe.view(1, -1)
         recipe_emb = self.recipe_embedder(self.embedding(recipe), None).unsqueeze(1)
 
-        assert mode in ["collect", "learn"]
-
-        if mode == "collect":
-            # states: [s1, ..., sn]
-            state_batch = []
-            for state in states:
-                state_batch.append(torch.tensor(state, device=self.device))
-
-            state_batch = pad_sequence(state_batch, batch_first=True)
-            state_embs = self.embed_states(state_batch, recipe_emb)
-            final_state_embs = self.state_recurrence(
-                state_embs.unsqueeze(1), None, hidden_states
+        # assert mode in ["collect", "learn"]
+        # if mode == "collect":
+        # states: [s1, ..., sn]
+        state_batch = []
+        for state in states:
+            state_batch.append(torch.tensor(state, device=self.device))
+        state_embs = self.embed_states(
+            pad_sequence(state_batch, batch_first=True), recipe_emb
+        )
+        final_state_embs = self.state_recurrence(
+            state_embs.unsqueeze(1), None, hidden_state=hidden_states
+        )
+        actions_batch = []
+        for state_actions in actions:
+            if isinstance(state_actions[0], int):
+                state_actions = [state_actions]
+            actions_padded = pad_sequence(
+                [torch.tensor(a, device=self.device) for a in state_actions],
+                batch_first=True,
             )
-            actions_batch = []
-            for state_actions in actions:
-                if isinstance(state_actions[0], int):
-                    state_actions = [state_actions]
-                actions_padded = pad_sequence(
-                    [torch.tensor(a, device=self.device) for a in state_actions],
-                    batch_first=True,
-                )
-                act_embs = self.action_embedder(
-                    self.embedding(actions_padded), actions_padded != 0
-                )
-                actions_batch.append(act_embs)
-
-            q_values = []
-            for s, actions in zip(final_state_embs, actions_batch):
-                s = s.unsqueeze(0)
-                s_hidden = self.state_to_hidden(self.elu(s))
-                act_hidden = self.action_to_hidden(self.elu(actions))
-
-                q_values.append(3 * cosine_similarity(s_hidden, act_hidden, dim=1))
-
-            return final_state_embs, q_values
-        else:
-            # states: [(s_1, s_2 ... s_k)_1, ... (s_1, s_2 ... s_k)_n]
-            sequences = []
-            for seq_states in states:
-                if len(seq_states) < 8:
-                    seq_states = [[0] for _ in range(8 - len(seq_states))] + seq_states
-                sequences.append(
-                    pad_sequence(
-                        [torch.tensor(s, device=self.device) for s in seq_states],
-                        batch_first=False,
-                    )
-                )
-            state_batch = pad_sequence(sequences, batch_first=True)
-            # batch_size X seq_len X state_len
-            state_batch = state_batch.permute(0, 2, 1)
-
-            embedded_state = []
-            for seq_step in state_batch.split(1, dim=1):
-                seq_step = seq_step.squeeze(1)
-                state_embs = self.embed_states(seq_step, recipe_emb).unsqueeze(1)
-                embedded_state.append(state_embs)
-            state_embs = torch.cat(embedded_state, dim=1)
-            final_state_embs = self.state_recurrence(
-                state_embs, None, hidden_states
+            act_embs = self.action_embedder(
+                self.embedding(actions_padded), actions_padded != 0
             )
-            return
+            actions_batch.append(act_embs)
+
+        q_values = []
+        for s, actions in zip(final_state_embs, actions_batch):
+            s = s.unsqueeze(0)
+            s_hidden = self.state_to_hidden(self.elu(s))
+            act_hidden = self.action_to_hidden(self.elu(actions))
+
+            q_values.append(3 * cosine_similarity(s_hidden, act_hidden, dim=1))
+
+        return final_state_embs, q_values
+        # else:
+        #     # states: [(s_1, s_2 ... s_k)_1, ... (s_1, s_2 ... s_k)_n]
+        #     sequences = []
+        #     for seq_states in states:
+        #         if len(seq_states) < 8:
+        #             seq_states = [[0] for _ in range(8 - len(seq_states))] + seq_states
+        #         sequences.append(
+        #             pad_sequence(
+        #                 [torch.tensor(s, device=self.device) for s in seq_states],
+        #                 batch_first=False,
+        #             )
+        #         )
+        #     state_batch = pad_sequence(sequences, batch_first=True)
+        #     # batch_size X seq_len X state_len
+        #     state_batch = state_batch.permute(0, 2, 1)
+        #
+        #     embedded_state = []
+        #     for seq_step in state_batch.split(1, dim=1):
+        #         seq_step = seq_step.squeeze(1)
+        #         state_embs = self.embed_states(seq_step, recipe_emb).unsqueeze(1)
+        #         embedded_state.append(state_embs)
+        #     state_embs = torch.cat(embedded_state, dim=1)
+        #     final_state_embs = self.state_recurrence(
+        #         state_embs, None, hidden_states
+        #     )
+        #     return
 
     def embed(self, data_batch):
         orig_lens = torch.tensor([len(s) for s in data_batch])
