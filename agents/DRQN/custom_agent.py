@@ -150,7 +150,7 @@ class BaseQlearningAgent:
                 self.hidden_state[idx] = state
 
             selected_action_idxs = [
-                softmax(q_val / 0.1).multinomial(1).item() for q_val in self.q_values
+                softmax(q_val / 0.1, dim=0).multinomial(1).item() for q_val in self.q_values
             ]
             # selected_action_idxs = [
             #     q_val.argmax().item() for q_val in self.q_values

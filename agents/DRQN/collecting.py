@@ -1,4 +1,5 @@
 from multiprocessing import Queue
+from pathlib import Path
 
 import torch
 from logging import info
@@ -32,6 +33,7 @@ def collect_experience(
         net=policy_net, params=train_params, eps_scheduler=eps_scheduler
     )
     batch_size = train_params.pop("n_parallel_envs")
+    use_parallel_envs = train_params.pop("use_separate_process_envs")
     if env is None:
         env_id = textworld.gym.register_games(
             game_files,
@@ -42,7 +44,7 @@ def collect_experience(
         env_id = textworld.gym.make_batch(
             env_id,
             batch_size=batch_size,
-            parallel=train_params.pop("use_separate_process_envs"),
+            parallel=use_parallel_envs
         )
         env = gym.make(env_id)
 
@@ -54,6 +56,15 @@ def collect_experience(
                 target_net.load_state_dict(policy_net.state_dict())
 
             obs, infos = env.reset()
+            if use_parallel_envs:
+                env.envs[0].get("env.current_gamefile")
+                current_gamefile = env.envs[0].result()
+                env.envs[1].get("env.current_gamefile")
+                assert current_gamefile == env.envs[1].result()
+            else:
+                current_gamefile = env.envs[0].current_gamefile
+            current_gamefile = Path(current_gamefile).name
+
             actor.start_episode(infos)
             actor.train()
 
@@ -65,34 +76,34 @@ def collect_experience(
                 steps = [step + int(not done) for step, done in zip(steps, dones)]
 
                 # TODO: only one game is supported
-                infos["gamefile"] = game_files[0]
+                infos["gamefile"] = current_gamefile
                 with torch.no_grad():
                     command = actor.act(obs, cumulative_rewards, dones, infos)
                 obs, cumulative_rewards, dones, infos = env.step(command)
-            infos["gamefile"] = game_files[0]
+            infos["gamefile"] = current_gamefile
             actor.act(obs, cumulative_rewards, dones, infos)
             assert all([actor.history[i][-1].transition.done for i in range(actor.batch_size)])
             for game in actor.history.values():
                 buffer.put([item.transition for item in game])
             if log_dir is not None:
                 writer.add_scalar(
-                    "train/avg_reward", numpy.mean(cumulative_rewards), collecting_step
+                    f"avg_reward/{current_gamefile}", numpy.mean(cumulative_rewards), collecting_step
                 )
-                writer.add_scalar("train/avg_steps", numpy.mean(steps), collecting_step)
-                writer.add_scalar("train/eps", actor.eps_scheduler.eps, collecting_step)
+                writer.add_scalar(f"avg_steps/{current_gamefile}", numpy.mean(steps), collecting_step)
+                # writer.add_scalar("test/eps", actor.eps_scheduler.eps, collecting_step)
 
                 if collecting_step % 5 == 0:
                     with open(log_dir / f"game_{collecting_step}.txt", "w") as f:
-                        trace = get_sample_history_trace(actor.history)
+                        trace = get_sample_history_trace(actor.history, current_gamefile)
                         print(trace, file=f)
 
                 # writer.add_histogram(
-                #     "train/actor_target_net_weights",
+                #     "test/actor_target_net_weights",
                 #     target_net.hidden_to_scores.weight.clone().detach().cpu().numpy(),
                 #     collecting_step,
                 # )
                 # writer.add_histogram(
-                #     "train/actor_policy_net_weights",
+                #     "test/actor_policy_net_weights",
                 #     policy_net.hidden_to_scores.weight.clone().detach().cpu().numpy(),
                 #     collecting_step,
                 # )

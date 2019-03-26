@@ -11,9 +11,9 @@ logging.basicConfig(level=logging.INFO)
 if __name__ == "__main__":
     games = [
         str(f)
-        for f in Path("games/train_sample").iterdir()
+        for f in Path("games/simple_games").iterdir()
         if f.is_file() and f.suffix == ".ulx"
-    ][:1]
+    ]
 
     logging.info(games)
 
