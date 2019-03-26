@@ -1,19 +1,17 @@
-from logging import info, warning
+from logging import info
 from multiprocessing import Queue
 from queue import Empty
-from time import sleep
 from typing import Optional
 
-import numpy
+import torch
 from numpy import array
 from tensorboardX import SummaryWriter
-import torch
 from torch.nn.functional import smooth_l1_loss
 from torch.optim import Adam
 
+from agents.utils.replay import SeqTernaryPrioritizeReplayMemory
 from agents.utils.split import get_chunks
 from agents.utils.types import Transition
-from agents.utils.replay import SeqTernaryPrioritizeReplayMemory
 from agents.utils.utils import idx_select
 
 learning_step = 1
@@ -51,18 +49,32 @@ def learn(
         sample = replay_buffer.sample(batch_size)
         recipe = sample[0][0].recipe
         policy_net_hidden_states = None
-        sizes = numpy.array([len(seq) for seq in sample])
+
+        # sort by increasing length, then pad so all seqs have same length
+        sample = sorted(sample, key=len)
+        sample = [[None for _ in range(chunk_size - len(seq))] + seq for seq in sample]
+
         for step in range(chunk_size):
-            if step > 0:
-                non_finished_seq_idxs = numpy.nonzero(sizes > step)[0]
-                sample = idx_select(sample, non_finished_seq_idxs)
-                policy_net_hidden_states = policy_net_hidden_states[:, non_finished_seq_idxs, :]
-                sizes = numpy.array([len(seq) for seq in sample])
             step_transitions = [seq[step] for seq in sample]
-
-            batch = Transition(*zip(*step_transitions))
-
+            valid_step_transitions = [
+                item for item in step_transitions if item is not None
+            ]
+            batch = Transition(*zip(*valid_step_transitions))
             policy_net.train()
+
+            if policy_net_hidden_states is not None:
+                num_new_states = len(
+                    valid_step_transitions
+                ) - policy_net_hidden_states.size(1)
+                if num_new_states:
+                    policy_net_hidden_states = torch.cat(
+                        [
+                            torch.zeros_like(policy_net_hidden_states)[:, :num_new_states, :],
+                            policy_net_hidden_states,
+                        ],
+                        dim=1
+                    )
+
             new_policy_net_hidden_states, q_values = policy_net(
                 batch.previous_state,
                 batch.action,
@@ -70,9 +82,11 @@ def learn(
                 hidden_states=policy_net_hidden_states,
             )
 
-            # if step < chunk_size // 2
+            policy_net_hidden_states = new_policy_net_hidden_states.unsqueeze(0)
 
-            policy_net_hidden_states = new_policy_net_hidden_states.unsqueeze(0).detach()
+            if step < chunk_size // 2:
+                policy_net_hidden_states = policy_net_hidden_states.detach()
+
             q_values_selected_actions = torch.cat(q_values)
 
             non_terminal_idxs = (~array(batch.done)).nonzero()[0]
@@ -107,7 +121,7 @@ def learn(
                         next_non_final_states,
                         selected_actions,
                         recipe,
-                        hidden_states=next_hidden_states,
+                        hidden_states=next_hidden_states.to(target_net.device),
                     )[1]
                 )
             expected_values = (
@@ -118,15 +132,16 @@ def learn(
                 + gamma * next_state_values
             )
 
-            optimizer.zero_grad()
-            loss = smooth_l1_loss(q_values_selected_actions, expected_values)
-            loss.backward(retain_graph=True)
-            optimizer.step()
+            if step >= chunk_size // 2:
+                optimizer.zero_grad()
+                loss = smooth_l1_loss(q_values_selected_actions, expected_values)
+                loss.backward(retain_graph=True)
+                optimizer.step()
 
-            t1 = q_values_selected_actions.cpu().detach().numpy().flatten()
-            t2 = expected_values.cpu().detach().numpy().flatten()
-            print(f"Predicted: {t1[::4]}")
-            print(f"Should be: {t2[::4]}")
+                t1 = q_values_selected_actions.cpu().detach().numpy().flatten()
+                t2 = expected_values.cpu().detach().numpy().flatten()
+                print(f"Predicted: {t1[::4]}")
+                print(f"Should be: {t2[::4]}")
 
         if log_dir is not None:
             if learning_step % saving_freq == 0:
@@ -134,20 +149,5 @@ def learn(
                 torch.save(policy_net.state_dict(), model_path)
 
             writer.add_scalar("train/loss", loss.item(), learning_step)
-            # writer.add_histogram(
-            #     "train/learner_target_net_weights",
-            #     target_net.hidden_to_scores.weight.clone().detach().cpu().numpy(),
-            #     learning_step,
-            # )
-            # writer.add_histogram(
-            #     "train/learner_policy_net_weights",
-            #     policy_net.hidden_to_scores.weight.clone().detach().cpu().numpy(),
-            #     learning_step,
-            # )
             learning_step += 1
-            info(f"Done learning step, loss={loss.item()}")
-
-        # except ValueError as e:
-        #     print(e)
-        #     warning("Not enough elements in buffer!")
-        #     sleep(2.0)
+        info(f"Done learning step, loss={loss.item()}")
