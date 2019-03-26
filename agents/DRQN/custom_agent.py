@@ -27,6 +27,8 @@ class BaseQlearningAgent:
         self.vectorizer = SpacyVectorizer()
         self.reset()
         self._episode_has_started = True
+        self.exploration_bonus = params.pop("exploration_bonus")
+        self.reward_penalty = params.pop("reward_penalty")
 
     def train(self) -> None:
         """ Tell the agent it is in training mode. """
@@ -265,14 +267,14 @@ class BaseQlearningAgent:
         done: bool,
         state: str,
     ):
-        reward = float(cum_reward - prev_cum_reward)
-        exploration_bonus = 0.5 * float(state not in self.visited_states[not_done_idx])
+        reward = float(cum_reward - prev_cum_reward) - self.reward_penalty
+        exploration_bonus = self.exploration_bonus * float(state not in self.visited_states[not_done_idx])
         if game_lost:
-            reward = -1.5
+            reward = -1.0
             exploration_bonus = 0.0
-        if done and cum_reward == self.max_reward:
-            reward = 2.0
-            exploration_bonus = 0.0
+        # if done and cum_reward == self.max_reward:
+        #     reward = 2.0
+        #     exploration_bonus = 0.0
         # exploration_bonus = 0.0
         return reward, exploration_bonus
 
@@ -293,7 +295,7 @@ class BaseQlearningAgent:
             [
                 description,
                 " <S> ".join(admissible_commands),
-                feedback,
+                # feedback,
                 " <S> ".join(inventory),
                 " <S> ".join(missing_items),
                 prev_action,

@@ -185,9 +185,9 @@ class SeqTernaryPrioritizeReplayMemory(AbstractReplayMemory):
         is_good = False
         is_bad = False
         for transition in transitions:
-            if transition.reward > 0.0:
+            if transition.reward > 0.5:
                 is_good = True
-            elif transition.reward < 0.0:
+            elif transition.reward < -0.5:
                 is_bad = True
         if is_good:
             self.good_buffer_position = self._push(
