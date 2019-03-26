@@ -68,10 +68,10 @@ def learn(
                 ) - policy_net_hidden_states.size(1)
                 if num_new_states:
                     policy_net_hidden_states = torch.cat(
-                        [
+                        (
                             torch.zeros_like(policy_net_hidden_states)[:, :num_new_states, :],
                             policy_net_hidden_states,
-                        ],
+                        ),
                         dim=1
                     )
 

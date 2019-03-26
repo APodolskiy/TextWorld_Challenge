@@ -4,9 +4,9 @@ from typing import List
 from agents.utils.types import HistoryElement
 
 
-def get_sample_history_trace(history: List[HistoryElement]):
+def get_sample_history_trace(history: List[HistoryElement], gamefile):
     traces = history[0]
-    result = []
+    result = [gamefile]
     prev_reward = 0
     prev_exp_reward = 0
     for game_step in traces:

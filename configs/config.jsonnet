@@ -2,15 +2,15 @@
 training: {
     vocab_size: 20202,
     # actor params
-    n_epochs_collection: 2,
-    n_parallel_envs: 16,
+    n_epochs_collection: 1,
+    n_parallel_envs: 11,
     use_separate_process_envs: true,
-    actor_device: "cuda:5",
-    target_net_update_freq: 4,
+    actor_device: "cuda",
+    target_net_update_freq: 12,
     reward_penalty: 0.3,
     exploration_bonus: 0.5,
     # learner params
-    learner_device: "cuda:6",
+    learner_device: "cuda",
     chunk_size: 8,
     batch_size: 64,
     lr: 1e-3,
