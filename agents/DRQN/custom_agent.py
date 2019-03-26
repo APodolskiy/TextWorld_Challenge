@@ -131,16 +131,8 @@ class BaseQlearningAgent:
                 zip(observations, self.prev_actions, self.prev_cum_rewards)
             )
         ]
-
-        # if random.random() < self.eps_scheduler.eps:
-        #     self.q_values = None
-        #     selected_action_idxs = [
-        #         random.choice(len(adm_com)) for adm_com in commands_not_finished
-        #     ]
-        # else:
         self.net.eval()
         if not_done_idxs:
-            # TODO: update hidden state
             new_hidden_states, self.q_values = self.net(
                 idx_select(states, not_done_idxs),
                 commands_not_finished,
@@ -212,7 +204,7 @@ class BaseQlearningAgent:
                 done = dones[not_done_idx]
                 inventory = infos["inventory"]
                 desc_inventory = (
-                    infos["description"][not_done_idx] + inventory[not_done_idx]
+                    inventory[not_done_idx]
                 )
                 reward, exploration_bonus = self.calculate_rewards(
                     not_done_idx=not_done_idx,
@@ -249,7 +241,7 @@ class BaseQlearningAgent:
             assert self.current_step == 0
             for idx in range(len(infos)):
                 self.visited_states[idx].add(
-                    infos["description"][0] + infos["inventory"][0]
+                    infos["inventory"][0]
                 )
         self.prev_states = next_states
         self.prev_actions = actions
