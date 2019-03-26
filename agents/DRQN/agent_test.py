@@ -55,8 +55,6 @@ if __name__ == "__main__":
     )
     agent.load_state_dict(torch.load(params["training"]["model_path"]))
 
-    args.game_file = "tw-cooking-recipe1+take1-OdqPHPKnUvB0fKQa.ulx"
-
     game_file = f"games/train/{args.game_file}"
     check_agent(
         game_file=game_file, agent_net=agent, train_params=params.pop("training")
