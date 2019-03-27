@@ -136,7 +136,7 @@ class BaseQlearningAgent:
             new_hidden_states, self.q_values = self.net(
                 idx_select(states, not_done_idxs),
                 commands_not_finished,
-                self.cooking_steps,
+                recipes=[self.cooking_steps],
                 hidden_states=(
                     None
                     if self.hidden_state is None
@@ -150,7 +150,8 @@ class BaseQlearningAgent:
                 self.hidden_state[idx] = state
 
             selected_action_idxs = [
-                softmax(q_val / 0.1, dim=0).multinomial(1).item() for q_val in self.q_values
+                softmax(q_val / 0.1, dim=0).multinomial(1).item()
+                for q_val in self.q_values
             ]
             # selected_action_idxs = [
             #     q_val.argmax().item() for q_val in self.q_values
@@ -203,9 +204,7 @@ class BaseQlearningAgent:
                 game_lost = infos["is_lost"][not_done_idx]
                 done = dones[not_done_idx]
                 inventory = infos["inventory"]
-                desc_inventory = (
-                    inventory[not_done_idx]
-                )
+                desc_inventory = inventory[not_done_idx]
                 reward, exploration_bonus = self.calculate_rewards(
                     not_done_idx=not_done_idx,
                     cum_reward=cum_reward,
@@ -240,9 +239,7 @@ class BaseQlearningAgent:
         else:
             assert self.current_step == 0
             for idx in range(len(infos)):
-                self.visited_states[idx].add(
-                    infos["inventory"][0]
-                )
+                self.visited_states[idx].add(infos["inventory"][0])
         self.prev_states = next_states
         self.prev_actions = actions
         self.prev_not_done_idxs = not_done_idxs
@@ -260,13 +257,16 @@ class BaseQlearningAgent:
         state: str,
     ):
         reward = float(cum_reward - prev_cum_reward) - self.reward_penalty
-        exploration_bonus = self.exploration_bonus * float(state not in self.visited_states[not_done_idx])
+        exploration_bonus = self.exploration_bonus * float(
+            state not in self.visited_states[not_done_idx]
+        )
         if game_lost:
             reward = -1.0
             exploration_bonus = 0.0
-        # if done and cum_reward == self.max_reward:
-        #     reward = 2.0
-        #     exploration_bonus = 0.0
+        if done and cum_reward == self.max_reward:
+            assert not game_lost
+            # reward = 2.0
+            exploration_bonus = self.exploration_bonus
         # exploration_bonus = 0.0
         return reward, exploration_bonus
 

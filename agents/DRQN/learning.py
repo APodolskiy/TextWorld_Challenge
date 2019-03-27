@@ -47,7 +47,6 @@ def learn(
             except Empty:
                 break
         sample = replay_buffer.sample(batch_size)
-        recipe = sample[0][0].recipe
         policy_net_hidden_states = None
 
         # sort by increasing length, then pad so all seqs have same length
@@ -60,6 +59,7 @@ def learn(
                 item for item in step_transitions if item is not None
             ]
             batch = Transition(*zip(*valid_step_transitions))
+            recipes = batch.recipe
             policy_net.train()
 
             if policy_net_hidden_states is not None:
@@ -78,7 +78,7 @@ def learn(
             new_policy_net_hidden_states, q_values = policy_net(
                 batch.previous_state,
                 batch.action,
-                recipe,
+                recipes,
                 hidden_states=policy_net_hidden_states,
             )
 
@@ -104,7 +104,7 @@ def learn(
                 _, next_state_q_values = policy_net(
                     next_non_final_states,
                     next_non_final_allowed_actions,
-                    recipe,
+                    idx_select(recipes, non_terminal_idxs),
                     hidden_states=next_hidden_states,
                 )
                 best_q_value_idxs = [
@@ -120,7 +120,7 @@ def learn(
                     target_net(
                         next_non_final_states,
                         selected_actions,
-                        recipe,
+                        idx_select(recipes, non_terminal_idxs),
                         hidden_states=next_hidden_states.to(target_net.device),
                     )[1]
                 )
