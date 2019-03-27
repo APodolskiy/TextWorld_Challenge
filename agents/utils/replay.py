@@ -1,4 +1,4 @@
-from logging import warning
+from logging import warning, info
 
 from overrides import overrides
 import random
@@ -169,17 +169,26 @@ class BinaryPrioritizeReplayMemory(AbstractReplayMemory):
 
 
 class SeqTernaryPrioritizeReplayMemory(AbstractReplayMemory):
-    def __init__(self, capacity: int = 100_000, priority_fraction: float = 0.0):
+    def __init__(
+        self,
+        capacity: int = 100_000,
+        good_samples_fraction: float = 0.0,
+        bad_samples_fraction: float = 0.0,
+    ):
         super().__init__(capacity=capacity)
-        self.priority_fraction = priority_fraction
+        self.good_samples_fraction = good_samples_fraction
+        self.bad_samples_fraction = bad_samples_fraction
         self.good_seqs_buffer = []
         self.good_buffer_position = 0
         self.bad_seqs_buffer = []
         self.bad_buffer_position = 0
         self.neutral_seqs_buffer = []
         self.neutral_buffer_position = 0
-        self.prior_capacity = int(self.capacity * priority_fraction) // 2
-        self.secondary_capacity = self.capacity - 2 * self.prior_capacity
+        self.good_samples_capacity = int(self.capacity * self.good_samples_fraction)
+        self.bad_samples_capacity = int(self.capacity * self.bad_samples_fraction)
+        self.secondary_capacity = (
+            self.capacity - self.good_samples_capacity - self.bad_samples_capacity
+        )
 
     def push(self, transitions: List[Transition]):
         is_good = False
@@ -194,14 +203,14 @@ class SeqTernaryPrioritizeReplayMemory(AbstractReplayMemory):
                 transitions=transitions,
                 position=self.good_buffer_position,
                 buffer=self.good_seqs_buffer,
-                capacity=self.prior_capacity,
+                capacity=self.good_samples_capacity,
             )
         if is_bad:
             self.bad_buffer_position = self._push(
                 transitions=transitions,
                 position=self.bad_buffer_position,
                 buffer=self.bad_seqs_buffer,
-                capacity=self.prior_capacity,
+                capacity=self.bad_samples_capacity,
             )
         if not is_good and not is_bad:
             self.neutral_buffer_position = self._push(
@@ -218,16 +227,15 @@ class SeqTernaryPrioritizeReplayMemory(AbstractReplayMemory):
         return (position + 1) % capacity
 
     def sample(self, batch_size: int):
-        if self.priority_fraction == 0.0:
+        if self.good_samples_fraction == 0.0:
             batch_size = min(batch_size, len(self.neutral_seqs_buffer))
             return random.sample(self.neutral_seqs_buffer, batch_size)
         else:
             good_size = min(
-                int(batch_size * self.priority_fraction) // 2,
-                len(self.good_seqs_buffer),
+                int(self.good_samples_fraction * batch_size), len(self.good_seqs_buffer)
             )
             bad_size = min(
-                int(batch_size * self.priority_fraction) // 2, len(self.bad_seqs_buffer)
+                int(self.bad_samples_fraction * batch_size), len(self.bad_seqs_buffer)
             )
             secondary_size = min(
                 batch_size - bad_size - good_size, len(self.neutral_seqs_buffer)
@@ -236,6 +244,9 @@ class SeqTernaryPrioritizeReplayMemory(AbstractReplayMemory):
             neg_prior_samples = random.sample(self.bad_seqs_buffer, bad_size)
             secondary_samples = random.sample(self.neutral_seqs_buffer, secondary_size)
             samples = pos_prior_samples + neg_prior_samples + secondary_samples
+            info(
+                f"Good samples: {len(pos_prior_samples)}; bad samples: {len(neg_prior_samples)} rest samples: {len(secondary_samples)}"
+            )
             return samples
 
 

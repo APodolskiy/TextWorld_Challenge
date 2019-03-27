@@ -33,6 +33,7 @@ epsilon: {
     },
 replay_memory : {
     capacity: 500000,
-    priority_fraction: 0.2
+    good_samples_fraction: 0.2,
+    bad_samples_fraction: 0.1
     }
 }

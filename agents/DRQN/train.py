@@ -72,7 +72,8 @@ if __name__ == "__main__":
     replay_memory_params = params.pop("replay_memory")
     replay_buffer = SeqTernaryPrioritizeReplayMemory(
         capacity=replay_memory_params.pop("capacity"),
-        priority_fraction=replay_memory_params.pop("priority_fraction"),
+        good_samples_fraction=replay_memory_params.pop("good_samples_fraction"),
+        bad_samples_fraction=replay_memory_params.pop("bad_samples_fraction")
     )
 
     train_params = params.pop("training")
