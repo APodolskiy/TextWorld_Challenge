@@ -9,9 +9,11 @@ def get_sample_history_trace(history: List[HistoryElement], gamefile):
     result = [gamefile]
     prev_reward = 0
     prev_exp_reward = 0
-    for game_step in traces:
+    cum_reward = 0
+    for step_num, game_step in enumerate(traces):
         result.append(
-            f"{game_step.infos['feedback'].strip()}\nReward={prev_reward} Exploration reward={prev_exp_reward}"
+            f"{game_step.infos['feedback'].strip()}\n"
+            f"Finished step {step_num}. Reward={prev_reward} Exploration reward={prev_exp_reward}"
         )
         qvalues = game_step.q_values
         info = game_step.infos
@@ -29,5 +31,7 @@ def get_sample_history_trace(history: List[HistoryElement], gamefile):
                 result.append(f" > {command}: {q_value:.3f}")
         prev_reward = transition.reward
         prev_exp_reward = transition.exploration_bonus
+        cum_reward += prev_reward == 1.0
     result.append(f"Reward={prev_reward} Exploration reward={prev_exp_reward}")
+    result.append(f"Finished in {len(traces)} steps. Total reward = {cum_reward}")
     return "\n".join(result)
