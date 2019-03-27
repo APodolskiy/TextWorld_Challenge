@@ -15,7 +15,7 @@ training: {
     batch_size: 64,
     lr: 1e-3,
     gamma: 0.9,
-    max_steps_per_episode: 120,
+    max_steps_per_episode: 50,
     max_samples: 100,
     n_learning_steps: 11,
     saving_freq: 10,
@@ -23,7 +23,7 @@ training: {
     },
 network: {
     embedding_dim: 150,
-    hidden_size: 256
+    hidden_size: 512
     },
 epsilon: {
     init_eps: 0.0,
