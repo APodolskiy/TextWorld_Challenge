@@ -4,7 +4,7 @@ from overrides import overrides
 import random
 from typing import NamedTuple, List
 
-from tests.multiprocessing_example import Transition
+from agents.utils.types import Transition
 
 
 class AbstractReplayMemory:
