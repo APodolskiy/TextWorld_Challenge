@@ -1,8 +1,7 @@
-import torch
 from collections import defaultdict
 from typing import List, Dict, Any
 
-from numpy import random
+import torch
 from textworld import EnvInfos
 from torch.nn.functional import softmax
 
