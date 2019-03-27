@@ -43,9 +43,7 @@ class SimpleNet(Module):
         )
 
         self.action_embedder = PytorchSeq2VecWrapper(
-            LSTM(
-                batch_first=True, input_size=self.emb_dim, hidden_size=self.hidden_size
-            )
+            GRU(batch_first=True, input_size=self.emb_dim, hidden_size=self.hidden_size)
         )
 
         self.recipe_embedder = PytorchSeq2VecWrapper(
@@ -72,47 +70,44 @@ class SimpleNet(Module):
         return (att_probs.unsqueeze(2) * state_seq_embs).sum(dim=1)
 
     def forward(
-        self,
-        states: List[List[int]],
-        actions: List[List[int]],
-        recipe,
-        hidden_states,
+        self, states: List[List[int]], actions: List[List[int]], recipes, hidden_states
     ):
         if not hidden_states is None:
             assert hidden_states.size(1) == len(states)
-
-        recipe = torch.tensor(recipe, device=self.device)
-        assert recipe.ndimension() == 1
-        recipe = recipe.view(1, -1)
-        recipe_emb = self.recipe_embedder(self.embedding(recipe), None).unsqueeze(1)
+        recipes = pad_sequence(
+            [torch.tensor(recipe, device=self.device) for recipe in recipes],
+            batch_first=True,
+        )
+        recipe_embs = self.recipe_embedder(
+            self.embedding(recipes), recipes != 0
+        ).unsqueeze(1)
 
         state_batch = []
         for state in states:
             state_batch.append(torch.tensor(state, device=self.device))
         state_embs = self.embed_states(
-            pad_sequence(state_batch, batch_first=True), recipe_emb
+            pad_sequence(state_batch, batch_first=True), recipe_embs
         )
         final_state_embs = self.state_recurrence(
             state_embs.unsqueeze(1), None, hidden_state=hidden_states
         )
-        actions_batch = []
-        for state_actions in actions:
-            if isinstance(state_actions[0], int):
-                state_actions = [state_actions]
+
+        q_values = []
+        for s, actions_in_state in zip(final_state_embs, actions):
+            if isinstance(actions_in_state[0], int):
+                actions_in_state = [actions_in_state]
             actions_padded = pad_sequence(
-                [torch.tensor(a, device=self.device) for a in state_actions],
+                [torch.tensor(a, device=self.device) for a in actions_in_state],
                 batch_first=True,
             )
             act_embs = self.action_embedder(
-                self.embedding(actions_padded), actions_padded != 0
+                self.embedding(actions_padded),
+                actions_padded != 0,
+                hidden_state=s.unsqueeze(0).expand(actions_padded.size(0), -1).unsqueeze(0),
             )
-            actions_batch.append(act_embs)
-
-        q_values = []
-        for s, actions in zip(final_state_embs, actions_batch):
             s = s.unsqueeze(0)
             s_hidden = self.state_to_hidden(self.elu(s))
-            act_hidden = self.action_to_hidden(self.elu(actions))
+            act_hidden = self.action_to_hidden(self.elu(act_embs))
             q_values.append(3 * cosine_similarity(s_hidden, act_hidden, dim=1))
 
         return final_state_embs, q_values
