@@ -62,7 +62,7 @@ def collect_experience(
                 env.envs[1].get("env.current_gamefile")
                 assert current_gamefile == env.envs[1].result()
             else:
-                current_gamefile = env.envs[0].current_gamefile
+                current_gamefile = env.envs[0].env.current_gamefile
             current_gamefile = Path(current_gamefile).name
 
             actor.start_episode(infos)
