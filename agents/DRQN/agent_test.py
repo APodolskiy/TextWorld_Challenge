@@ -12,6 +12,7 @@ from allennlp.common import Params
 from agents.DRQN.custom_agent import BaseQlearningAgent
 from agents.DRQN.networks.simple_net import SimpleNet
 from agents.utils.eps_scheduler import DeterministicEpsScheduler
+from agents.utils.logging import get_sample_history_trace
 
 
 def check_agent(game_file, train_params, agent_net):
@@ -35,12 +36,13 @@ def check_agent(game_file, train_params, agent_net):
 
     cnt = 0
     while not all(dones) and cnt < 50:
-        infos["gamefile"] = game_file[0]
+        infos["gamefile"] = game_file
         commands = actor.act(obs, cumulative_rewards, dones, infos)
-        print(f">{commands[0]}")
         obs, cumulative_rewards, dones, infos = env.step(commands)
-        print(obs[0])
         cnt += 1
+    infos["gamefile"] = game_file
+    actor.act(obs, cumulative_rewards, dones, infos)
+    print(get_sample_history_trace(actor.history, game_file))
 
 
 if __name__ == "__main__":
