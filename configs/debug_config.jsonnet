@@ -2,7 +2,7 @@
 training: {
     vocab_size: 20202,
     # actor params
-    n_epochs_collection: 3,
+    n_epochs_collection: 1,
     n_parallel_envs: 3,
     use_separate_process_envs: false,
     actor_device: "cuda:5",
@@ -15,7 +15,7 @@ training: {
     batch_size: 13,
     lr: 1e-3,
     gamma: 0.95,
-    max_steps_per_episode: 100,
+    max_steps_per_episode: 50,
     max_samples: 100,
     n_learning_steps: 20,
     saving_freq: 10000000000,
