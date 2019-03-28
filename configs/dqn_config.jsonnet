@@ -1,7 +1,7 @@
 {
     training: {
         max_nb_steps_per_episode: 200,  // maximum number of steps that could be taken in each game
-        batch_size: 5,  // number of games that are run in parallel
+        batch_size: 16,  // number of games that are run in parallel
         nb_epochs: 10000, // number of passes through all games
         update_freq: 10,
         target_net_update_freq: 50,
@@ -11,7 +11,7 @@
     },
     exploration: { // eps-greedy exploration
         init_eps: 1.0,
-        final_eps: 0.025,
+        final_eps: 0.1,
         steps: 50000,
         print: 50
     },

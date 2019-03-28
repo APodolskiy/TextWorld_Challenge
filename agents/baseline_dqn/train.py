@@ -39,8 +39,13 @@ def _validate_requested_infos(infos: EnvInfos):
 
 
 def train(game_files):
+    log_path = Path('runs/test_dqn')
+    if log_path.exists():
+        shutil.rmtree(str(log_path))
+    log_path.mkdir(parents=True)
+    writer = SummaryWriter(log_dir=str(log_path))
 
-    agent = CustomAgent()
+    agent = CustomAgent(writer=writer)
     requested_infos = agent.select_additional_infos()
     _validate_requested_infos(requested_infos)
 
@@ -49,12 +54,6 @@ def train(game_files):
                                           name="training")
     env_id = textworld.gym.make_batch(env_id, batch_size=agent.batch_size, parallel=True)
     env = gym.make(env_id)
-
-    log_path = Path('runs/test_dqn')
-    if log_path.exists():
-        shutil.rmtree(str(log_path))
-    log_path.mkdir(parents=True)
-    writer = SummaryWriter(log_dir=str(log_path))
 
     for epoch_no in range(1, agent.nb_epochs + 1):
         stats = {

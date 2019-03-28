@@ -9,8 +9,8 @@ import spacy
 import torch
 import torch.optim as optim
 import torch.nn.functional as F
-from spacy.lang.ar import STOP_WORDS
 from spacy.lang.en import STOP_WORDS
+from tensorboardX import SummaryWriter
 
 from textworld import EnvInfos
 
@@ -27,13 +27,15 @@ Transition = namedtuple('Transition', ('description_id_list', 'command',
 
 
 class CustomAgent:
-    def __init__(self):
+    def __init__(self, writer: SummaryWriter):
         self.mode = "train"
         self.word2id = {}
         self.word_vocab = []
         self._load_vocab(vocab_file="./vocab.txt")
         self.EOS_id = self.word2id["</S>"]
         self.SEP_id = self.word2id["SEP"]
+
+        self.writer = writer
 
         self.config = json.loads(evaluate_file("configs/dqn_config.jsonnet"))
 
@@ -45,7 +47,7 @@ class CustomAgent:
         self.model = LSTM_DQN(config=self.config["model"], word_vocab=self.word_vocab)
         self.target_model = LSTM_DQN(config=self.config["model"], word_vocab=self.word_vocab)
         self.target_model.load_state_dict(self.model.state_dict())
-        self.optimizer = optim.Adam(self.model.parameters())
+        self.optimizer = optim.Adam(self.model.parameters(), lr=1e-4)
         if self.use_cuda:
             self.model.cuda()
             self.target_model.cuda()
@@ -58,7 +60,7 @@ class CustomAgent:
 
         self.update_per_k_game_steps = self.config["training"]["update_freq"]
         self.update_target = self.config["training"]["target_net_update_freq"]
-        self.replay_batch_size = self.config["training"]["replay_batch-size"]
+        self.replay_batch_size = self.config["training"]["replay_batch_size"]
         self.clip_grad_norm = self.config["training"]["clip_grad_norm"]
         self.discount_gamma = self.config["training"]["discount_gamma"]
 
@@ -100,9 +102,9 @@ class CustomAgent:
         actions = []
         choosen_command_idx = []
         if random.random() < self.eps_scheduler(self.act_steps):
-            choosen_command_idx.extend([np.random.choice(len(commands)) for commands in admissible_commands])
-            actions.extend([env_commands[command_id]
-                            for env_commands, command_id in zip(admissible_commands, choosen_command_idx)])
+           choosen_command_idx.extend([np.random.choice(len(commands)) for commands in admissible_commands])
+           actions.extend([env_commands[command_id]
+                           for env_commands, command_id in zip(admissible_commands, choosen_command_idx)])
         else:
             with torch.no_grad():
                 command_ids = self.get_commands(input_description, input_commands)
@@ -132,6 +134,7 @@ class CustomAgent:
                 # Backpropagate
                 self.optimizer.zero_grad()
                 loss.backward()
+                self.writer.add_scalar("loss", loss.item(), self.act_steps)
                 #loss.backward(retain_graph=True)
                 # `clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.
                 torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.clip_grad_norm)
@@ -226,8 +229,13 @@ class CustomAgent:
 
     def get_commands(self, description, commands) -> List[int]:
         q_values = self.model(description, commands)
-        command_ids = [q_vs.argmax().item() for q_vs in q_values]
-        return command_ids
+        commands_ids = [q_vs.argmax().item() for q_vs in q_values]
+        # commands_ids = []
+        # Boltzmann exploration
+        # for q_vs in q_values:
+        #     norm_q_vs: torch.Tensor = torch.nn.functional.softmax(q_vs / 0.1)
+        #     commands_ids.append(int(norm_q_vs.multinomial(num_samples=1).item()))
+        return commands_ids
 
     def get_game_state_info(self, obs: List[str], infos: [Dict[str, List[Any]]]):
         inventory_token_list = [preproc(item, tokenizer=self.nlp) for item in infos["inventory"]]

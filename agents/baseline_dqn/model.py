@@ -1,5 +1,5 @@
 import logging
-from typing import Dict, List
+from typing import Dict, List, Optional
 from types import SimpleNamespace
 
 import torch
@@ -36,7 +36,7 @@ class LSTM_DQN(nn.Module):
                                                 out_features=self.config.h_size)
         self.nonlin = nn.ELU()
 
-    def forward(self, description: List[int], commands: List[List[List[int]]]):
+    def forward(self, description: List[int], commands: List[List[List[int]]], max_score: int = 3):
         # description embedding
         description_emb = self.embedding(description)
         _, (s_h, s_c) = self.state_encoder(description_emb)
