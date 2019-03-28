@@ -4,6 +4,7 @@ from multiprocessing import Queue
 from pathlib import Path
 from shutil import rmtree
 
+from agents.DRQN.policy.policies import BoltzmannPolicy
 from agents.utils.params import Params
 
 logging.basicConfig(level=logging.INFO)
@@ -40,7 +41,7 @@ if __name__ == "__main__":
     from agents.DRQN.learning import learn
     from agents.DRQN.networks.simple_net import SimpleNet
     from agents.utils.eps_scheduler import EpsScheduler
-    from agents.utils.replay import BinaryPrioritizeReplayMemory, SeqTernaryPrioritizeReplayMemory
+    from agents.utils.replay import SeqTernaryPrioritizeReplayMemory
     import textworld.gym
     import gym
 
@@ -80,11 +81,11 @@ if __name__ == "__main__":
     eps_params = params.pop("epsilon")
 
     eps_scheduler = EpsScheduler(eps_params)
-    for _ in range(1000):
+    for _ in range(200):
         collect_experience(
             buffer=queue,
             train_params=train_params.duplicate(),
-            eps_scheduler=eps_scheduler,
+            policy=BoltzmannPolicy(temperature=0.1),
             game_files=games,
             target_net=target_net,
             policy_net=my_net,
