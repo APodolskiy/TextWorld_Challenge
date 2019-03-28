@@ -17,12 +17,12 @@ class BaseQlearningAgent:
     penalty
     """
 
-    def __init__(self, params: Params, net, eps_scheduler) -> None:
+    def __init__(self, params: Params, net, policy) -> None:
         self._initialized = False
         self.max_steps_per_episode = params.pop("max_steps_per_episode")
         self.batch_size = params.get("n_parallel_envs")
         self.net = net
-        self.eps_scheduler = eps_scheduler
+        self.policy = policy
         self.vectorizer = SpacyVectorizer()
         self.reset()
         self._episode_has_started = True
@@ -147,14 +147,8 @@ class BaseQlearningAgent:
             self.hidden_state = ["None" for _ in range(len(observations))]
             for idx, state in zip(not_done_idxs, new_hidden_states):
                 self.hidden_state[idx] = state
+            selected_action_idxs = self.policy(self.q_values)
 
-            selected_action_idxs = [
-                softmax(q_val / 0.1, dim=0).multinomial(1).item()
-                for q_val in self.q_values
-            ]
-            # selected_action_idxs = [
-            #     q_val.argmax().item() for q_val in self.q_values
-            # ]
         else:
             self.q_values = None
             selected_action_idxs = []

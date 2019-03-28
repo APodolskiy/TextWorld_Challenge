@@ -8,7 +8,7 @@ training: {
     actor_device: "cuda:5",
     target_net_update_freq: 12,
     reward_penalty: 0.3,
-    exploration_bonus: 0.5,
+    exploration_bonus: 0.35,
     # learner params
     learner_device: "cuda:6",
     chunk_size: 8,

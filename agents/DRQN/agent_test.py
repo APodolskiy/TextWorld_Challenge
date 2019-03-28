@@ -11,6 +11,7 @@ from allennlp.common import Params
 
 from agents.DRQN.custom_agent import BaseQlearningAgent
 from agents.DRQN.networks.simple_net import SimpleNet
+from agents.DRQN.policy.policies import GreedyPolicy
 from agents.utils.eps_scheduler import DeterministicEpsScheduler
 from agents.utils.logging import get_sample_history_trace
 
@@ -28,7 +29,7 @@ def check_agent(game_file, train_params, agent_net):
     cumulative_rewards = [0]
     dones = [False]
     actor = BaseQlearningAgent(
-        net=agent_net, params=train_params, eps_scheduler=DeterministicEpsScheduler()
+        net=agent_net, params=train_params, policy=GreedyPolicy()
     )
     actor.start_episode(infos)
 

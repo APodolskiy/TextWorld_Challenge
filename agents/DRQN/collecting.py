@@ -1,16 +1,15 @@
+from logging import info
 from multiprocessing import Queue
 from pathlib import Path
 
-import torch
-from logging import info
-
 import gym
-import textworld.gym
 import numpy
-from tqdm import tqdm
-from agents.DRQN.custom_agent import BaseQlearningAgent
+import textworld.gym
+import torch
 from tensorboardX import SummaryWriter
+from tqdm import tqdm
 
+from agents.DRQN.custom_agent import BaseQlearningAgent
 from agents.utils.logging import get_sample_history_trace
 
 collecting_step = 1
@@ -20,7 +19,7 @@ def collect_experience(
     game_files,
     buffer: Queue,
     train_params,
-    eps_scheduler,
+    policy,
     target_net,
     policy_net,
     log_dir,
@@ -30,7 +29,7 @@ def collect_experience(
     if log_dir is not None:
         writer = SummaryWriter(log_dir)
     actor = BaseQlearningAgent(
-        net=policy_net, params=train_params, eps_scheduler=eps_scheduler
+        net=policy_net, params=train_params, policy=policy
     )
     batch_size = train_params.pop("n_parallel_envs")
     use_parallel_envs = train_params.pop("use_separate_process_envs")
@@ -90,7 +89,6 @@ def collect_experience(
                     f"avg_reward/{current_gamefile}", numpy.mean(cumulative_rewards), collecting_step
                 )
                 writer.add_scalar(f"avg_steps/{current_gamefile}", numpy.mean(steps), collecting_step)
-                # writer.add_scalar("test/eps", actor.eps_scheduler.eps, collecting_step)
 
                 if collecting_step % 5 == 0:
                     with open(log_dir / f"game_{collecting_step}.txt", "w") as f:
@@ -109,4 +107,3 @@ def collect_experience(
                 # )
             collecting_step += 1
             actor.reset()
-            actor.eps_scheduler.increase_step()
