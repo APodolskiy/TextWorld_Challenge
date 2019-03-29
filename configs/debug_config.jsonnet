@@ -3,6 +3,7 @@ training: {
     vocab_size: 20202,
     # actor params
     n_epochs_collection: 1,
+    n_played_games: 1,
     n_parallel_envs: 3,
     use_separate_process_envs: false,
     actor_device: "cuda:5",
