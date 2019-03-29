@@ -3,6 +3,7 @@ training: {
     vocab_size: 20202,
     # actor params
     n_epochs_collection: 1,
+    n_played_games: 10,
     n_parallel_envs: 11,
     use_separate_process_envs: true,
     actor_device: "cuda:5",
@@ -19,7 +20,7 @@ training: {
     max_samples: 100,
     n_learning_steps: 11,
     saving_freq: 10,
-    model_path: "debug_saved_model.pth"
+    model_path: "one_skill_model.pth"
     },
 network: {
     embedding_dim: 150,

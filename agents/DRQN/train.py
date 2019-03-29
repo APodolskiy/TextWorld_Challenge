@@ -12,7 +12,7 @@ logging.basicConfig(level=logging.INFO)
 if __name__ == "__main__":
     games = [
         str(f)
-        for f in Path("games/simple_games").iterdir()
+        for f in Path("games/one_skill").iterdir()
         if f.is_file() and f.suffix == ".ulx"
     ]
 
@@ -40,7 +40,6 @@ if __name__ == "__main__":
     from agents.DRQN.custom_agent import BaseQlearningAgent
     from agents.DRQN.learning import learn
     from agents.DRQN.networks.simple_net import SimpleNet
-    from agents.utils.eps_scheduler import EpsScheduler
     from agents.utils.replay import SeqTernaryPrioritizeReplayMemory
     import textworld.gym
     import gym
@@ -80,8 +79,8 @@ if __name__ == "__main__":
     train_params = params.pop("training")
     eps_params = params.pop("epsilon")
 
-    eps_scheduler = EpsScheduler(eps_params)
-    for _ in range(200):
+    # eps_scheduler = EpsScheduler(eps_params)
+    for _ in range(1000):
         collect_experience(
             buffer=queue,
             train_params=train_params.duplicate(),
