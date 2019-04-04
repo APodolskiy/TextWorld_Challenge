@@ -102,9 +102,9 @@ class CustomAgent:
         actions = []
         choosen_command_idx = []
         if random.random() < self.eps_scheduler(self.act_steps):
-           choosen_command_idx.extend([np.random.choice(len(commands)) for commands in admissible_commands])
-           actions.extend([env_commands[command_id]
-                           for env_commands, command_id in zip(admissible_commands, choosen_command_idx)])
+            choosen_command_idx.extend([np.random.choice(len(commands)) for commands in admissible_commands])
+            actions.extend([env_commands[command_id]
+                            for env_commands, command_id in zip(admissible_commands, choosen_command_idx)])
         else:
             with torch.no_grad():
                 command_ids = self.get_commands(input_description, input_commands)
