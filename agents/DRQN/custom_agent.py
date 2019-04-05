@@ -104,7 +104,7 @@ class BaseQlearningAgent:
         infos: Dict[str, List[Any]],
     ):
         # TODO: refactor S NULYA - keep only useful states
-        self.gamefile = infos.get("gamefile")
+        self.gamefile = infos["gamefile"]
         infos["feedback"] = observations
         infos["is_lost"] = [
             ("You lost!" in o if d else False) for o, d in zip(observations, dones)
