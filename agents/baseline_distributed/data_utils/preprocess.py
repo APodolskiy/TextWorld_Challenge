@@ -1,15 +1,35 @@
-from typing import Optional
-
+from typing import Optional, List, Callable
 
 INFO_TYPES = ["description", "feedback", "inventory", "recipe"]
+SEP_TOKEN = "<SEP>"
+ITM_TOKEN = "<ITM>"
 
 
-def preprocess(text: Optional[str], info_type, tokenizer=None, lower_case=True):
+def preprocess(text: Optional[str], info_type, tokenizer=None, lower_case=True) -> List[str]:
+    """
+    Clean and tokenize text
+    :param text: text string
+    :param info_type: text data type
+    :param tokenizer: function for tokenization
+    :param lower_case: whether to lowercase text
+    :return: list of tokens
+    """
     assert info_type in INFO_TYPES
     text = clean_text(text, info_type)
+    if lower_case:
+        text = text.lower()
+    tokens = tokenize_text(text, info_type, tokenizer=tokenizer)
+    return tokens
 
 
 def clean_text(text: str, text_type: str) -> str:
+    """
+    Clean text according to the provided text type.
+    :param text: text string
+    :param text_type: type of the text data
+    :param sep_token: token used for text parts separation
+    :return: cleansed text
+    """
     assert type in INFO_TYPES
     if text_type == "feedback":
         if "$$$$$$$" in text:
@@ -17,57 +37,21 @@ def clean_text(text: str, text_type: str) -> str:
         if "-=" in text:
             text = text.split("-=")[0]
     elif text_type == "inventory":
-        text = [it.strip() for it in text.split("\n") if len(it) > 0]
-        if len(text) > 0:
-            pass
-    elif text_type == "recipe":
-        pass
-    else:
-        pass
+        text_parts = [it.strip() for it in text.split("\n") if len(it) > 0]
+        text_parts = text_parts[1:] if len(text_parts) > 1 else text_parts
+        text = sep_token.join(text_parts)
+    text = text.strip()
+    if not text:
+        text = "nothing"
     return text
 
 
-def tokenize_text(text: str, text_type: str):
-    pass
-
-
-def clean_text(s, type_):
-    assert type_ in ["inventory", "feedback", "description"]
-    if type_ == "inventory":
-        result = s.split("carrying")[1]
-        if result[0] == ":":
-            result = result[1:]
-    elif type_ == "feedback":
-        result = s
-        if "$$$$$$$" in result:
-            result = ""
-        if "-=" in result:
-            result = result.split("-=")[0]
-    else:
-        result = s
-    result = result.strip()
-    if not result:
-        result = "nothing"
-    return result
-
-
-def preproc(s, str_type='None', tokenizer=None, lower_case=True):
-    if s is None:
-        return ["nothing "]
-    s = s.replace("\n", ' ')
-    if s.strip() == "":
-        return ["nothing"]
-    if str_type == 'feedback':
-        if "$$$$$$$" in s:
-            s = ""
-        if "-=" in s:
-            s = s.split("-=")[0]
-    s = s.strip()
-    if len(s) == 0:
-        return ["nothing"]
-    tokens = [t.text for t in tokenizer(s)]
-    if lower_case:
-        tokens = [t.lower() for t in tokens]
+def tokenize_text(text: str, text_type: str, tokenizer: Callable) -> List[str]:
+    if text_type == "inventory":
+        pass
+    elif text_type == "recipe":
+        pass
+    tokens = [t.text for t in tokenizer(text)]
     return tokens
 
 
