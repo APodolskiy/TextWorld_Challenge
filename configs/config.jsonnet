@@ -11,7 +11,7 @@ training: {
     reward_penalty: 0.3,
     exploration_bonus: 0.35,
     # learner params
-    learner_device: "cuda:6",
+    learner_device: "cuda:4",
     chunk_size: 8,
     batch_size: 64,
     lr: 5e-4,
@@ -35,6 +35,6 @@ epsilon: {
 replay_memory : {
     capacity: 500000,
     good_samples_fraction: 0.4,
-    bad_samples_fraction: 0.05
+    bad_samples_fraction: 0.00
     }
 }
