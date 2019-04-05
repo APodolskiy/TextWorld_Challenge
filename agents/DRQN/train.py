@@ -12,14 +12,14 @@ logging.basicConfig(level=logging.INFO)
 if __name__ == "__main__":
     games = [
         str(f)
-        for f in Path("games/one_skill").iterdir()
+        for f in Path("games/train").iterdir()
         if f.is_file() and f.suffix == ".ulx"
     ]
 
     logging.info(games)
 
     if os.environ.get("DEBUG_MODE") != "1":
-        params = Params.from_file("configs/config.jsonnet")
+        params = Params.from_file("configs/new_config.jsonnet")
         logging.info("Starting in TRAIN mode")
         log_dir = os.environ.get("EXP_NAME", None)
 
@@ -80,7 +80,7 @@ if __name__ == "__main__":
     eps_params = params.pop("epsilon")
 
     # eps_scheduler = EpsScheduler(eps_params)
-    for _ in range(1000):
+    for _ in range(30000):
         collect_experience(
             buffer=queue,
             train_params=train_params.duplicate(),

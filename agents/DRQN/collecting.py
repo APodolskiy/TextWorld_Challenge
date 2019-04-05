@@ -26,7 +26,7 @@ def collect_experience(
     env=None,
 ):
     global collecting_step
-    max_plots = 30
+    max_plots = 100
     global current_plot_names
     if log_dir is not None:
         writer = SummaryWriter(log_dir)

@@ -50,7 +50,7 @@ if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument("game_file", type=str)
     args = parser.parse_args()
-    params = Params.from_file("configs/config.jsonnet")
+    params = Params.from_file("configs/new_config.jsonnet")
     agent = SimpleNet(
         config=params["network"],
         device="cpu",

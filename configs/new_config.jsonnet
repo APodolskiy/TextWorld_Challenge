@@ -16,11 +16,11 @@ training: {
     batch_size: 64,
     lr: 5e-4,
     gamma: 0.9,
-    max_steps_per_episode: 50,
+    max_steps_per_episode: 100,
     max_samples: 100,
     n_learning_steps: 11,
-    saving_freq: 10,
-    model_path: "one_skill_model.pth"
+    saving_freq: 100,
+    model_path: "full_data_model.pth"
     },
 network: {
     embedding_dim: 150,
