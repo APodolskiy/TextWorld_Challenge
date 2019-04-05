@@ -254,7 +254,7 @@ class BaseQlearningAgent:
             state not in self.visited_states[not_done_idx]
         )
         if game_lost:
-            reward = -1.0
+            # reward = -1.0
             exploration_bonus = 0.0
         if done and cum_reward == self.max_reward:
             assert not game_lost
@@ -286,5 +286,6 @@ class BaseQlearningAgent:
                 prev_action,
             ]
         )
+        # state_info += f"{self.vectorizer.join_symbol} {' '.join(self.cooking_steps)}"
         state_info += f" {self.vectorizer.join_symbol} {prev_cum_reward}"
-        return self.vectorizer(state_info)
+        return self.vectorizer(state_info) + [self.vectorizer.join_symbol_idx] + self.cooking_steps
