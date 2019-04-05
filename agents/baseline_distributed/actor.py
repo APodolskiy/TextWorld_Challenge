@@ -7,6 +7,8 @@ from tqdm import tqdm
 from agents.baseline_distributed.model import LSTM_DQN
 from agents.baseline_distributed.utils.data_utils import preprocess
 from agents.utils.eps_scheduler import LinearScheduler
+
+
 class Actor(mp.Process):
     def __init__(self,
                  actor_id: int,
@@ -47,6 +49,7 @@ class Actor(mp.Process):
         self.dones: List[List[int]] = []
         self.prev_description_id: List = None
         self.prev_command: List = None
+
     def run(self):
         env_id = textworld.gym.register_games(self.game_files,
                                               self.request_infos,
@@ -69,8 +72,10 @@ class Actor(mp.Process):
                     steps += 1
                 stats["scores"].append(score)
                 stats["steps"].append(steps)
+
     def act(self, obs: str, infos: Dict[str, List[Any]]) -> str:
         pass
+
     def get_game_state_info(self, obs: str, infos: Dict[str, List[Any]]) -> torch.Tensor:
         description_tokens = preprocess(infos["description"], "description", tokenizer=self.nlp)
         if len(description_tokens) == 0:

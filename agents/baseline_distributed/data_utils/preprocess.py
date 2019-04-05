@@ -1,8 +1,14 @@
 from typing import Optional
+
+
 INFO_TYPES = ["description", "feedback", "inventory", "recipe"]
+
+
 def preprocess(text: Optional[str], info_type, tokenizer=None, lower_case=True):
     assert info_type in INFO_TYPES
     text = clean_text(text, info_type)
+
+
 def clean_text(text: str, text_type: str) -> str:
     assert type in INFO_TYPES
     if text_type == "feedback":
@@ -19,8 +25,12 @@ def clean_text(text: str, text_type: str) -> str:
     else:
         pass
     return text
+
+
 def tokenize_text(text: str, text_type: str):
     pass
+
+
 def clean_text(s, type_):
     assert type_ in ["inventory", "feedback", "description"]
     if type_ == "inventory":
@@ -39,6 +49,8 @@ def clean_text(s, type_):
     if not result:
         result = "nothing"
     return result
+
+
 def preproc(s, str_type='None', tokenizer=None, lower_case=True):
     if s is None:
         return ["nothing "]
@@ -57,6 +69,8 @@ def preproc(s, str_type='None', tokenizer=None, lower_case=True):
     if lower_case:
         tokens = [t.lower() for t in tokens]
     return tokens
+
+
 if __name__ == "__main__":
     feedback = "You are hungry! Let's cook a delicious meal. Check the cookbook in the kitchen\n" \
                 "for the recipe. Once done, enjoy your meal!\n" \
