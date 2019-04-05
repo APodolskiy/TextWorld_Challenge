@@ -5,13 +5,30 @@ from agents.utils.params import Params
 
 class EpsScheduler:
     def __init__(self, config: Params):
-        self.init_eps = config.pop("init_eps", 1.0)
-        self.gamma = config.pop("gamma", 0.95)
-        self.step_size = config.pop("step_size", 1)
-        self.min_eps = config.pop("min_eps", 0.1)
+        self.init_eps = config.pop("init_eps")
+        self.gamma = config.pop("gamma")
+        self.step_size = config.pop("step_size")
+        self.min_eps = config.pop("min_eps")
+        self.current_step = 1
 
-    def eps(self, current_step):
-        return max(self.min_eps, self.init_eps * self.gamma ** (current_step // self.step_size))
+    @property
+    def eps(self):
+        return max(
+            self.min_eps,
+            self.init_eps * self.gamma ** (self.current_step // self.step_size),
+        )
+
+    def increase_step(self):
+        self.current_step += 1
+
+
+class DeterministicEpsScheduler:
+    def __init__(self):
+        pass
+
+    @property
+    def eps(self):
+        return 0.0
 
 
 class LinearScheduler:

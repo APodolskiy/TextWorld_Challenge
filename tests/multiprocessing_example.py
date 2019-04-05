@@ -1,5 +1,5 @@
 from collections import namedtuple
-from multiprocessing.managers import BaseManager, NamespaceProxy
+from multiprocessing.managers import BaseManager
 import os
 import random
 import torch

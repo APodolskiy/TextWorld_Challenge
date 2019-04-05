@@ -9,17 +9,25 @@ def to_np(x):
     return x.data.cpu().numpy()
 
 
-def to_pt(np_matrix, enable_cuda=False, type='long'):
-    if type == 'long':
+def to_pt(np_matrix, enable_cuda=False, type="long"):
+    if type == "long":
         if enable_cuda:
-            return torch.autograd.Variable(torch.from_numpy(np_matrix).type(torch.LongTensor).cuda())
+            return torch.autograd.Variable(
+                torch.from_numpy(np_matrix).type(torch.LongTensor).cuda()
+            )
         else:
-            return torch.autograd.Variable(torch.from_numpy(np_matrix).type(torch.LongTensor))
-    elif type == 'float':
+            return torch.autograd.Variable(
+                torch.from_numpy(np_matrix).type(torch.LongTensor)
+            )
+    elif type == "float":
         if enable_cuda:
-            return torch.autograd.Variable(torch.from_numpy(np_matrix).type(torch.FloatTensor).cuda())
+            return torch.autograd.Variable(
+                torch.from_numpy(np_matrix).type(torch.FloatTensor).cuda()
+            )
         else:
-            return torch.autograd.Variable(torch.from_numpy(np_matrix).type(torch.FloatTensor))
+            return torch.autograd.Variable(
+                torch.from_numpy(np_matrix).type(torch.FloatTensor)
+            )
 
 
 def _words_to_ids(words, word2id):
@@ -32,13 +40,13 @@ def _words_to_ids(words, word2id):
     return ids
 
 
-def preproc(s, str_type='None', tokenizer=None, lower_case=True):
+def preproc(s, str_type="None", tokenizer=None, lower_case=True):
     if s is None:
         return ["nothing"]
-    s = s.replace("\n", ' ')
+    s = s.replace("\n", " ")
     if s.strip() == "":
         return ["nothing"]
-    if str_type == 'feedback':
+    if str_type == "feedback":
         if "$$$$$$$" in s:
             s = ""
         if "-=" in s:
@@ -56,8 +64,8 @@ def max_len(list_of_list):
     return max(map(len, list_of_list))
 
 
-def pad_sequences(sequences, maxlen=None, dtype='int32', value=0.):
-    '''
+def pad_sequences(sequences, maxlen=None, dtype="int32", value=0.0):
+    """
     Partially borrowed from Keras
     # Arguments
         sequences: list of lists where each element is a sequence
@@ -66,7 +74,7 @@ def pad_sequences(sequences, maxlen=None, dtype='int32', value=0.):
         value: float, value to pad the sequences to the desired value.
     # Returns
         x: numpy array with dimensions (number_of_sequences, maxlen)
-    '''
+    """
     lengths = [len(s) for s in sequences]
     nb_samples = len(sequences)
     if maxlen is None:
@@ -87,8 +95,10 @@ def pad_sequences(sequences, maxlen=None, dtype='int32', value=0.):
         # check `trunc` has expected shape
         trunc = np.asarray(trunc, dtype=dtype)
         if trunc.shape[1:] != sample_shape:
-            raise ValueError('Shape of sample %s of sequence at position %s is different from expected shape %s' %
-                             (trunc.shape[1:], idx, sample_shape))
+            raise ValueError(
+                "Shape of sample %s of sequence at position %s is different from expected shape %s"
+                % (trunc.shape[1:], idx, sample_shape)
+            )
         # post padding
-        x[idx, :len(trunc)] = trunc
+        x[idx, : len(trunc)] = trunc
     return x
