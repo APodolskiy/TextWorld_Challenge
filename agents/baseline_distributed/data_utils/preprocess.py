@@ -30,7 +30,7 @@ def clean_text(text: str, text_type: str, sep_token: str = SEP_TOKEN) -> str:
     :param sep_token: token used for text parts separation
     :return: cleansed text
     """
-    assert type in INFO_TYPES
+    assert text_type in INFO_TYPES
     if text_type == "feedback":
         if "$$$$$$$" in text:
             text = ""
@@ -70,6 +70,7 @@ if __name__ == "__main__":
                 "see a counter. The counter is vast. On the counter you can see a cookbook and a\n" \
                 "knife. You can make out a stove. But there isn't a thing on it."
     print(clean_text(feedback, "feedback"))
+    print(preprocess(feedback, "feedback"))
     inventory = "You are carrying:\n" \
                 "  a roasted white onion\n" \
                 "  a red onion\n"
