@@ -22,7 +22,7 @@ def preprocess(text: Optional[str], info_type, tokenizer=None, lower_case=True) 
     return tokens
 
 
-def clean_text(text: str, text_type: str) -> str:
+def clean_text(text: str, text_type: str, sep_token: str = SEP_TOKEN) -> str:
     """
     Clean text according to the provided text type.
     :param text: text string
@@ -36,10 +36,6 @@ def clean_text(text: str, text_type: str) -> str:
             text = ""
         if "-=" in text:
             text = text.split("-=")[0]
-    elif text_type == "inventory":
-        text_parts = [it.strip() for it in text.split("\n") if len(it) > 0]
-        text_parts = text_parts[1:] if len(text_parts) > 1 else text_parts
-        text = sep_token.join(text_parts)
     text = text.strip()
     if not text:
         text = "nothing"
@@ -48,9 +44,16 @@ def clean_text(text: str, text_type: str) -> str:
 
 def tokenize_text(text: str, text_type: str, tokenizer: Callable) -> List[str]:
     if text_type == "inventory":
-        pass
+        text_parts = [it.strip() for it in text.split("\n") if len(it) > 0]
+        if len(text_parts) > 1:
+            text_parts = [ITM_TOKEN + it for it in text_parts[1:]]
+        text = " ".join(text_parts)
     elif text_type == "recipe":
-        pass
+        ingr_pos = text.find("Ingredients:") + len("Ingredients:")
+        dirc_pos = text.find("Directions:") + len("Directions:")
+        ingredients = [ITM_TOKEN + it for it in text[ingr_pos:dirc_pos].split("\n") if it]
+        directions = [ITM_TOKEN + it for it in text[dirc_pos:].split("\n") if it]
+        text = SEP_TOKEN.join(ingredients + directions)
     tokens = [t.text for t in tokenizer(text)]
     return tokens
 
