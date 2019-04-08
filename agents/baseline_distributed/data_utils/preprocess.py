@@ -54,17 +54,17 @@ def tokenize_text(text: str, text_type: str, tokenizer: Callable, lower_case: bo
             tokens = [t.text for t in tokenizer(text_parts[0])]
     elif text_type == "recipe":
         ingr_pos = text.find("Ingredients:") + len("Ingredients:")
-        dirc_pos = text.find("Directions:") + len("Directions:")
+        dirc_pos = text.find("Directions:")
         if lower_case:
             text = text.lower()
         ingredients = [it.strip() for it in text[ingr_pos:dirc_pos].split("\n") if it]
-        directions = [it.strip() for it in text[dirc_pos:].split("\n") if it]
+        directions = [it.strip() for it in text[dirc_pos + len("Directions:"):].split("\n") if it]
         ingr_tokens = _tokenize_item_text_parts(ingredients, tokenizer)
         dirc_tokens = _tokenize_item_text_parts(directions, tokenizer)
         tokens = ingr_tokens + [SEP_TOKEN] + dirc_tokens
     else:
         text = text.replace('\n', ' ').strip()
-        tokens = [t.text for t in tokenizer(text)]
+        tokens = [t.text for t in tokenizer(text) if t.text != ' ']
     return tokens
 
 
@@ -105,3 +105,14 @@ if __name__ == "__main__":
                   "knife. You can make out a stove. But there isn't a thing on it.\n"
     print(clean_text(description, "description"))
     print(preprocess(description, "description", nlp))
+    recipe = "Ingredients:\n" \
+             "  white onion\n" \
+             "  yellow potato\n" \
+             "\n" \
+             "Directions:\n" \
+             "  slice the white onion\n" \
+             "  roast the white onion\n" \
+             "  roast the yellow potato\n" \
+             "  prepare meal"
+    print(recipe)
+    print(preprocess(recipe, "recipe", nlp))
