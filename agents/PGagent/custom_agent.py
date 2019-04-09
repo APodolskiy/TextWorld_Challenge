@@ -14,6 +14,8 @@ class CustomAgent:
         self.vector_size = 50
         self.hidden_size = 200
         self.output_size = 100
+        self.gamma = 0.99
+        self.learning_rate = 0.001
         with open("../../vocab.txt", 'r') as file:
             vocab = file.read().split('\n')
 
@@ -33,6 +35,9 @@ class CustomAgent:
         # simple model, taking just observation
         self.obs_model = Network(self.vector_size, self.hidden_size, self.output_size)
         self.act_model = Network(self.vector_size, self.hidden_size, self.output_size)
+
+        self.optimizer = torch.optim.Adam(list(self.obs_model.parameters()) + \
+                                          list(self.act_model.parameters()), lr=self.learning_rate)
 
     def select_additional_infos(self) -> EnvInfos:
         """
@@ -108,6 +113,27 @@ class CustomAgent:
 
         return string
 
+    def get_cumulative_rewards(self, rewards):
+        """
+        take a list of immediate rewards r(s,a) for the whole session
+        compute cumulative returns (a.k.a. G(s,a) in Sutton '16)
+        G_t = r_t + gamma*r_{t+1} + gamma^2*r_{t+2} + ...
+
+        The simple way to compute cumulative rewards is
+        to iterate from last to first time tick
+        and compute G_t = r_t + gamma*G_{t+1} recurrently
+
+        You must return an array/list of cumulative rewards with as many elements
+        as in the initial rewards.
+        """
+
+        def G_t(reward_arr, gamma):
+            return sum([gamma ** index * r for index, r in enumerate(reward_arr)])
+
+        G = [G_t(rewards[index:], self.gamma) for index, r in enumerate(rewards)]
+
+        return G
+
     def act(self, obs, infos):
         """
         :param obs: string - observation received from the environment
@@ -125,10 +151,23 @@ class CustomAgent:
             command_logits[i] = torch.dot(action_vector, obs_vector)
 
         command_probs = F.softmax(command_logits)
+        command_logprobs = F.log_softmax(command_logits)
 
         return np.random.choice(admissible_commands, p=command_probs.data.numpy())
 
-    def update(self):
-        pass
-
+    def update(self, states, actions, rewards):
+        """
+        Updating agent parameters
+        :param states: 2d array: episode*len(episode)
+        :param actions: 2d array episode*len(episode)
+        :param rewards: 2d array episode*len(episode)
+        :return: None
+        """
+        # cumulative_rewards is 2d array: episode*len(episode)
+        cumulative_rewards = torch.FloatTensor(np.array([self.get_cumulative_rewards(r) for r in rewards]))
+        print("Cumulative rewards shape:", cumulative_rewards.shape)
+        loss = torch.mean(*cumulative_rewards)
+        loss.backward()
+        self.optimizer.step()
+        self.optimizer.zero_grad()
 
