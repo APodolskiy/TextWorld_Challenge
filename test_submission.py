@@ -28,7 +28,7 @@ AVAILABLE_INFORMATION = textworld.EnvInfos(
     verbs=True, command_templates=True,                             # Handicap 2
     entities=True,                                                  # Handicap 3
     extras=["recipe"],                                              # Handicap 4
-    admissible_commands=True,                                       # Handicap 5
+    admissible_commands=False,                                      # Handicap 5
 )
 
 
@@ -209,86 +209,6 @@ def _run_evaluation(agent_class, args, agent_class_args=None):
         json.dump(stats, f)
 
 
-def _dockerize(args):
-    submission_dir = os.path.abspath(args.submission_dir)
-    games_dir = os.path.abspath(args.games_dir)
-    output_dir = os.path.dirname(os.path.abspath(args.output))
-    self_file = os.path.abspath(__file__)
-
-    with tempfile.NamedTemporaryFile(dir=output_dir) as output_file:
-        client = docker.from_env()
-
-        image_path = os.path.join(submission_dir, "Dockerimage")
-        if os.path.exists(image_path):
-            with open(image_path, "r") as f:
-                image = f.read().strip()
-        else:
-            image = "tavianator/textworld-codalab"
-
-        volumes = {
-            submission_dir: {
-                "bind": "/usr/src/submission",
-                "mode": "ro",
-            },
-            games_dir: {
-                "bind": "/usr/share/textworld-games",
-                "mode": "ro",
-            },
-            output_file.name: {
-                "bind": "/usr/share/textworld-stats.json",
-                "mode": "rw",
-            },
-            self_file: {
-                "bind": "/usr/bin/evaluate.py",
-                "mode": "ro",
-            },
-        }
-
-        command = [
-            "python3",
-            "/usr/bin/evaluate.py",
-            "--in-docker",
-            "/usr/src/submission",
-            "/usr/share/textworld-games",
-            "/usr/share/textworld-stats.json",
-        ]
-
-        if args.debug:
-            command += ["--debug"]
-
-        print("Loading {}...".format(image))
-        container = client.containers.run(
-            image,
-            command,
-            detach=True,
-            network_mode="none",
-            volumes=volumes,
-            environment=["PYTHONUNBUFFERED=1", "MKL_NUM_THREADS=1", "OMP_NUM_THREADS=1"],
-        )
-
-        try:
-            print("Running {}...".format(image))
-            result = container.wait(timeout=TIMEOUT)
-        finally:
-            if args.debug:
-                sys.stdout.buffer.write(container.logs(stdout=True, stderr=False))
-                sys.stderr.buffer.write(container.logs(stdout=False, stderr=True))
-
-            container.remove(force=True)
-
-        if result["StatusCode"] != 0:
-            msg = ("Some errors occur when evaluating the agent. You can test your agent"
-                   " using the `test_submission.py` script provided with the starting kit"
-                   " and using the `--debug` flag."
-                   " If you can't find your error, reach out to us: textworld@microsoft.com.")
-            raise NameError(msg)
-
-        print("Done")
-        stats = json.load(output_file)
-
-    _run_evaluation(_ReplayAgent, args, agent_class_args=stats)
-
-
 def main():
     parser = argparse.ArgumentParser(description="Evaluate an agent.")
     parser.add_argument("--in-docker", action="store_true", default=False, help=argparse.SUPPRESS)
@@ -312,7 +232,8 @@ def main():
         from custom_agent import CustomAgent
         _run_evaluation(CustomAgent, args)
     else:
-        _dockerize(args)
+        print("Problems with determining docker flag, check it again")
+        raise RuntimeError
 
 
 if __name__ == "__main__":
