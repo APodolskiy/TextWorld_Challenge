@@ -28,7 +28,7 @@ AVAILABLE_INFORMATION = textworld.EnvInfos(
     verbs=True, command_templates=True,                             # Handicap 2
     entities=True,                                                  # Handicap 3
     extras=["recipe"],                                              # Handicap 4
-    admissible_commands=False,                                      # Handicap 5
+    admissible_commands=True,                                      # Handicap 5
 )
 
 

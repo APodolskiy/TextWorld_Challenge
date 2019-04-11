@@ -1,18 +1,15 @@
 import numpy as np
-import textworld
-import gym
 
 
 def generate_session(agent, env, tmax=1000):
-    states, actions, rewards = [], [], []
+    rewards, action_probs = [], []
     state, infos = env.reset()
 
     for t in range(tmax):
-        action = agent.act(state, infos)
+        action, action_prob = agent.act(state, infos)
         next_state, reward, done, infos = env.step(action)
 
-        states.append(state)
-        actions.append(action)
+        action_probs.append(action_prob)
         rewards.append(reward)
 
         state = next_state
@@ -20,4 +17,4 @@ def generate_session(agent, env, tmax=1000):
         if done:
             break
 
-    return states, actions, rewards
+    return np.array(action_probs), np.array(rewards)
