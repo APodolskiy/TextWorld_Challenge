@@ -94,24 +94,37 @@ class CustomAgent:
         Load pretrained checkpoint from file.
 
         Arguments:
-            load_from: File name of the pretrained model checkpoint.
+            load_from: path to directory (without '/' in the end), that contains obs model and act model
         """
-        print("loading model from %s\n" % (load_from))
+        print("loading model from %s\n" % load_from)
         try:
-            if self.use_cuda:
-                state_dict = torch.load(load_from)
-            else:
-                state_dict = torch.load(load_from, map_location='cpu')
-            self.model.load_state_dict(state_dict)
+
+            obs_state_dict = torch.load(load_from + '/obs_model.pt')
+            act_state_dict = torch.load()
+            self.obs_model.load_state_dict(obs_state_dict)
+            self.act_model.load_state_dict(act_state_dict)
         except:
             print("Failed to load checkpoint...")
+
+    def save_model(self, save_path):
+        """
+
+        :param save_path:  path to directory (without '/' in the end), where to save models
+        """
+        print(f"saving model to {save_path}\n")
+        try:
+            torch.save(self.obs_model.state_dict(), save_path + '/obs_model.pt')
+            torch.save(self.act_model.state_dict(), save_path + '/act_model.pt')
+        except:
+            print("Failed to save checkpoint...")
 
     def prepare_string(self, string):
         string = self.tokenizer.tokenize(string)
         string = [word for word in string if word not in self.stopwords]
-        string = [self.wordVectors[word] for word in string if word in self.wordVectors.keys()]
+        string_vector = np.array([self.wordVectors[word] for word in string if word in self.wordVectors.keys()])
+        string_vector = np.mean(string_vector, axis=0)
 
-        return string
+        return string_vector
 
     def get_cumulative_rewards(self, rewards):
         """
@@ -126,48 +139,55 @@ class CustomAgent:
         You must return an array/list of cumulative rewards with as many elements
         as in the initial rewards.
         """
-
         def G_t(reward_arr, gamma):
             return sum([gamma ** index * r for index, r in enumerate(reward_arr)])
 
         G = [G_t(rewards[index:], self.gamma) for index, r in enumerate(rewards)]
 
-        return G
+        return np.array(G)
 
-    def act(self, obs, infos):
-        """
-        :param obs: string - observation received from the environment
-        :param infos: environment additional information
-        :return: action to play
-        """
-        prep_obs = self.prepare_string(obs)
+    def get_logits(self, state, info):
+        prep_obs = self.prepare_string(state)
         obs_vector = self.obs_model(prep_obs)  # {self.output_size}-d vector
-        admissible_commands = infos['admissible_commands']
-        ad_map = {i: command for i, command in admissible_commands}
+        admissible_commands = info['admissible_commands']
         command_logits = torch.zeros(len(admissible_commands))
         for i, command in enumerate(admissible_commands):
             prep_command = self.prepare_string(command)
             action_vector = self.act_model(prep_command)
             command_logits[i] = torch.dot(action_vector, obs_vector)
 
+        return admissible_commands, command_logits
+
+    def act(self, state, info):
+        """
+        :param obs: string - observation received from the environment
+        :param infos: environment additional information
+        :return: action to play
+        """
+        admissible_commands, command_logits = self.get_logits(state, info)
+
         command_probs = F.softmax(command_logits)
-        command_logprobs = F.log_softmax(command_logits)
+        action = np.random.choice(admissible_commands, p=command_probs.data.numpy())
+        taken_action_prob = command_probs[admissible_commands.index(action)]
 
-        return np.random.choice(admissible_commands, p=command_probs.data.numpy())
+        return action, taken_action_prob
 
-    def update(self, states, actions, rewards):
+    def update(self, action_probs, rewards):
         """
         Updating agent parameters
-        :param states: 2d array: episode*len(episode)
-        :param actions: 2d array episode*len(episode)
-        :param rewards: 2d array episode*len(episode)
+        :param action_probs: [len(episode)]
+        :param rewards: [len(episode)]
         :return: None
         """
         # cumulative_rewards is 2d array: episode*len(episode)
-        cumulative_rewards = torch.FloatTensor(np.array([self.get_cumulative_rewards(r) for r in rewards]))
-        print("Cumulative rewards shape:", cumulative_rewards.shape)
-        loss = torch.mean(*cumulative_rewards)
-        loss.backward()
+        cumulative_rewards = torch.FloatTensor(self.get_cumulative_rewards(rewards))
+        action_probs = torch.tensor(action_probs.astype('float'), dtype=torch.float32)
+        action_probs = torch.autograd.Variable(action_probs, requires_grad=True)
+        entropy = torch.mean(action_probs*torch.log(action_probs))
+        J = torch.mean(torch.log(action_probs)*cumulative_rewards)
+        self.loss = - J - 0.1*entropy
+        self.loss.backward()
         self.optimizer.step()
         self.optimizer.zero_grad()
 
+        return self.loss.data.numpy(), entropy.data.numpy()
