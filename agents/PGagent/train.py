@@ -1,5 +1,6 @@
 import textworld
 import gym
+from matplotlib import pyplot as plt
 from pathlib import Path
 from textworld import EnvInfos
 from test_submission import _validate_requested_infos
@@ -22,7 +23,8 @@ requested_infos = EnvInfos(
 _validate_requested_infos(requested_infos)
 
 env_id = textworld.gym.register_games(
-    [[str(game) for game in games if str(game).endswith('.ulx')][0]],
+    # [[str(game) for game in games if str(game).endswith('.ulx')][0]],
+    [str(game_dir / 'tw-cooking-recipe1+take1-11Oeig8bSVdGSp78.ulx')],
     requested_infos,
     max_episode_steps=50,
     name="training",
@@ -32,11 +34,23 @@ env_id = textworld.gym.register_games(
 # TODO: add parallel environments
 env = gym.make(env_id)
 agent = CustomAgent()
+state, info = env.reset()
+entropy = []
+loss = []
 
 # training loop
-for episode in range(5):
-    states, actions, rewards = generate_session(agent, env)
+for episode in range(500):
+    action_probs, rewards = generate_session(agent, env)
+    loss_value, entropy_value = agent.update(action_probs, rewards)
+    loss.append(loss_value)
+    entropy.append(entropy_value)
+    if episode % 50 == 0:
+        print("episode: {}, loss: {}".format(episode, loss_value))
 
-
-
-
+plt.subplot(211)
+plt.plot(loss)
+plt.title("Loss")
+plt.subplot(212)
+plt.plot(entropy)
+plt.title("Entropy")
+plt.show()
