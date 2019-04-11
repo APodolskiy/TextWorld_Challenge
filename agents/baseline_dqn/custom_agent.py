@@ -32,7 +32,7 @@ class CustomAgent:
         self.word2id = {}
         self.word_vocab = []
         self._load_vocab(vocab_file="./vocab.txt")
-        self.EOS_id = self.word2id["</S>"]
+        self.EOS_id = self.word2id["</s>"]
         self.SEP_id = self.word2id["SEP"]
 
         self.writer = writer
@@ -258,7 +258,7 @@ class CustomAgent:
                          for (d, i, r) in zip(description_id_list, inventory_id_list, recipe_id_list)]
         input_description = pad_sequences(state_id_list, maxlen=max_len(state_id_list)).astype('int32')
         input_description = to_pt(input_description, self.use_cuda)
-        return input_description, description_id_list
+        return input_description, state_id_list
 
     def preprocess_commands(self, commands):
         preprocessed_commands = []
