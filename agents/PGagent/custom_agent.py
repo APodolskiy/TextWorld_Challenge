@@ -5,17 +5,24 @@ import numpy as np
 import gym
 import textworld
 import nltk
+import yaml
 from textworld import EnvInfos
 from agents.PGagent.network import Network
 
 
 class CustomAgent:
     def __init__(self):
-        self.vector_size = 50
-        self.hidden_size = 200
-        self.output_size = 100
-        self.gamma = 0.99
-        self.learning_rate = 0.001
+        # agent configuration
+        with open('./config.yaml') as config_file:
+            self.config = yaml.safe_load(config_file)
+        self.vector_size = int(self.config['training']['vector_size'])
+        self.hidden_size = int(self.config['training']['hidden_size'])
+        self.output_size = int(self.config['training']['output_size'])
+        self.gamma = float(self.config['training']['gamma'])
+        self.learning_rate = float(self.config['training']['learning_rate'])
+        self.batch_size = int(self.config['training']['batch_size'])
+        self.max_nb_steps_per_episode = int(self.config['training']['max_nb_steps_per_episode'])
+
         with open("../../vocab.txt", 'r') as file:
             vocab = file.read().split('\n')
 
@@ -96,27 +103,27 @@ class CustomAgent:
         Arguments:
             load_from: path to directory (without '/' in the end), that contains obs model and act model
         """
-        print("loading model from %s\n" % load_from)
+        print("[INFO] Loading model from %s\n" % load_from)
         try:
 
             obs_state_dict = torch.load(load_from + '/obs_model.pt')
-            act_state_dict = torch.load()
+            act_state_dict = torch.load(load_from + '/act_model.pt')
             self.obs_model.load_state_dict(obs_state_dict)
             self.act_model.load_state_dict(act_state_dict)
         except:
-            print("Failed to load checkpoint...")
+            print("[INFO] Failed to load checkpoint...")
 
     def save_model(self, save_path):
         """
 
         :param save_path:  path to directory (without '/' in the end), where to save models
         """
-        print(f"saving model to {save_path}\n")
+        print(f"[INFO] Saving model to {save_path}\n")
         try:
             torch.save(self.obs_model.state_dict(), save_path + '/obs_model.pt')
             torch.save(self.act_model.state_dict(), save_path + '/act_model.pt')
         except:
-            print("Failed to save checkpoint...")
+            print("[INFO] Failed to save checkpoint...")
 
     def prepare_string(self, string):
         string = self.tokenizer.tokenize(string)
@@ -147,8 +154,14 @@ class CustomAgent:
         return np.array(G)
 
     def get_logits(self, state, info):
+        """
+        Getting logits from two neural networks
+        :param state: it's whether a [episode_length, state_dim] or [batch_size, episode_length, state_dim]
+        :param info:
+        :return:
+        """
         prep_obs = self.prepare_string(state)
-        obs_vector = self.obs_model(prep_obs)  # {self.output_size}-d vector
+        obs_vector = self.obs_model(prep_obs)
         admissible_commands = info['admissible_commands']
         command_logits = torch.zeros(len(admissible_commands))
         for i, command in enumerate(admissible_commands):
@@ -164,7 +177,8 @@ class CustomAgent:
         :param infos: environment additional information
         :return: action to play
         """
-        admissible_commands, command_logits = self.get_logits(state, info)
+        states = [self.prepare_string(obs) for obs in state] if self.batch_size else state
+        admissible_commands, command_logits = self.get_logits(states, info)
 
         command_probs = F.softmax(command_logits)
         action = np.random.choice(admissible_commands, p=command_probs.data.numpy())
@@ -183,7 +197,7 @@ class CustomAgent:
         cumulative_rewards = torch.FloatTensor(self.get_cumulative_rewards(rewards))
         action_probs = torch.tensor(action_probs.astype('float'), dtype=torch.float32)
         action_probs = torch.autograd.Variable(action_probs, requires_grad=True)
-        entropy = torch.mean(action_probs*torch.log(action_probs))
+        entropy = -torch.mean(action_probs*torch.log(action_probs))
         J = torch.mean(torch.log(action_probs)*cumulative_rewards)
         self.loss = - J - 0.1*entropy
         self.loss.backward()
