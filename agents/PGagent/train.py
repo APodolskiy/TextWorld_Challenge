@@ -1,25 +1,17 @@
 import textworld
 import gym
+import numpy as np
 from matplotlib import pyplot as plt
 from pathlib import Path
-from textworld import EnvInfos
 from test_submission import _validate_requested_infos
 from agents.PGagent.custom_agent import CustomAgent
 from agents.PGagent.utils import generate_session
 
 
+agent = CustomAgent()
 game_dir = Path('/home/nik-96/Documents/git/textworld/microsoft_starting_kit/sample_games')
 games = list(game_dir.iterdir())
-requested_infos = EnvInfos(
-            max_score=True,
-            description=True,
-            inventory=True,
-            objective=True,
-            entities=True,
-            command_templates=True,
-            extras=["recipe"],
-            admissible_commands=True,
-        )
+requested_infos = agent.select_additional_infos()
 _validate_requested_infos(requested_infos)
 
 env_id = textworld.gym.register_games(
@@ -29,14 +21,17 @@ env_id = textworld.gym.register_games(
     max_episode_steps=50,
     name="training",
 )
-# batch_size = 16
-# env_id = textworld.gym.make_batch(env_id, batch_size=batch_size, parallel=True)
+batch_size = 16
+env_id = textworld.gym.make_batch(env_id, batch_size=batch_size, parallel=True)
 # TODO: add parallel environments
 env = gym.make(env_id)
-agent = CustomAgent()
-state, info = env.reset()
+state, info = env.reset()  # in the case of batch_size state is [batch_size, state text] dimensional
+# and info is still dict of several keys ("admissible commands", "verbs", "entities", etc.),
+#  but every value is batch-size length list, which elements are
+
 entropy = []
 loss = []
+episode_rewards = []
 
 # training loop
 for episode in range(500):
@@ -44,13 +39,19 @@ for episode in range(500):
     loss_value, entropy_value = agent.update(action_probs, rewards)
     loss.append(loss_value)
     entropy.append(entropy_value)
-    if episode % 50 == 0:
-        print("episode: {}, loss: {}".format(episode, loss_value))
+    episode_rewards.append(np.sum(rewards))
+    if episode % 49 == 0:
+        print("episode: {}, loss: {}, rewards: {}".format(episode + 1, np.mean(loss[-50:]), episode_rewards[-1]))
 
-plt.subplot(211)
+agent.save_model('./')
+
+plt.subplot(311)
 plt.plot(loss)
 plt.title("Loss")
-plt.subplot(212)
+plt.subplot(312)
 plt.plot(entropy)
 plt.title("Entropy")
+plt.subplot(313)
+plt.plot(episode_rewards)
+plt.title("Episode reward")
 plt.show()
