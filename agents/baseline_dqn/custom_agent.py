@@ -47,7 +47,7 @@ class CustomAgent:
         self.model = LSTM_DQN(config=self.config["model"], word_vocab=self.word_vocab)
         self.target_model = LSTM_DQN(config=self.config["model"], word_vocab=self.word_vocab)
         self.target_model.load_state_dict(self.model.state_dict())
-        self.optimizer = optim.Adam(self.model.parameters(), lr=1e-4)
+        self.optimizer = optim.Adam(self.model.parameters(), lr=1e-3)
         if self.use_cuda:
             self.model.cuda()
             self.target_model.cuda()

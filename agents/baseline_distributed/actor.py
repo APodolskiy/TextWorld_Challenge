@@ -1,9 +1,11 @@
 import json
 from pathlib import Path
-from typing import List, Dict, Any
+from random import random
+from typing import List, Dict, Any, Tuple
 
 from _jsonnet import evaluate_file
 import gym
+import numpy as np
 import spacy
 from textworld import EnvInfos
 import textworld.gym
@@ -91,10 +93,22 @@ class Actor(mp.Process):
                 stats["steps"].append(steps)
 
     def act(self, obs: str, infos: Dict[str, List[Any]], score: int, done: bool) -> str:
-        state_description = self.get_game_state_info(obs, infos)
-        pass
+        # Get state and commands embeddings
+        admissible_commands = infos["admissible_commands"]
+        state_description, state_ids = self.get_game_state_info(obs, infos)
+        commands_description, commands_ids = self.get_commands_description(admissible_commands)
 
-    def get_game_state_info(self, obs: str, infos: Dict[str, Any]) -> torch.Tensor:
+        # Choose action
+        if random.random() < self.eps:
+            chosen_command_idx = np.random.choice(len(admissible_commands))
+        else:
+            with torch.no_grad():
+                q_values = self.model(state_description, commands_description)
+                chosen_command_idx = q_values.argmax().item()
+        action = admissible_commands[chosen_command_idx]
+        return action
+
+    def get_game_state_info(self, obs: str, infos: Dict[str, Any]) -> Tuple[torch.Tensor, List]:
         description_tokens = preprocess(infos["description"][0], "description", tokenizer=self.nlp)
         if len(description_tokens) == 0:
             description_tokens = ["end"]
@@ -111,7 +125,13 @@ class Actor(mp.Process):
 
         state_ids = description_ids + [self.SEP_id] + inventory_ids + [self.SEP_id] + recipe_ids + [self.EOS_id]
         input_description = torch.tensor(state_ids, dtype=torch.long)
-        return input_description
+        return input_description, state_ids
+
+    def get_commands_description(self, commands: List[str]):
+        commands_tokens = [preprocess(item, "command", tokenizer=self.nlp) for item in commands]
+        commands_ids = [_words_to_ids(tokens, self.word2id) for tokens in commands_tokens]
+        commands_description = torch.tensor(commands_ids, dtype=torch.long)
+        return commands_description, commands_ids
 
     # TODO: replace load_vocab method with the argument in constructor
     def _load_vocab(self, vocab_file: str) -> None:

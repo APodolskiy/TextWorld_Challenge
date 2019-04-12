@@ -2,7 +2,7 @@ from typing import Optional, List, Callable
 
 import spacy
 
-INFO_TYPES = ["description", "feedback", "inventory", "recipe"]
+INFO_TYPES = ["description", "feedback", "inventory", "recipe", "command"]
 SEP_TOKEN = "<SEP>"
 ITM_TOKEN = "<ITM>"
 
