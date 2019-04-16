@@ -9,7 +9,9 @@ from agents.PGagent.utils import generate_session
 
 
 agent = CustomAgent()
-game_dir = Path('/home/nik-96/Documents/git/textworld/microsoft_starting_kit/sample_games')
+# the path for my laptop is /home/nik/Documents/git/textworld/microsoft_starting_kit/sample_games
+# and for work pc is /home/nik-96/Documents/git/textworld/microsoft_starting_kit/sample_games
+game_dir = Path('/home/nik/Documents/git/textworld/microsoft_starting_kit/sample_games')
 games = list(game_dir.iterdir())
 requested_infos = agent.select_additional_infos()
 _validate_requested_infos(requested_infos)
@@ -18,16 +20,20 @@ env_id = textworld.gym.register_games(
     # [[str(game) for game in games if str(game).endswith('.ulx')][0]],
     [str(game_dir / 'tw-cooking-recipe1+take1-11Oeig8bSVdGSp78.ulx')],
     requested_infos,
-    max_episode_steps=50,
+    max_episode_steps=agent.max_nb_steps_per_episode,
     name="training",
 )
-batch_size = 16
-env_id = textworld.gym.make_batch(env_id, batch_size=batch_size, parallel=True)
+batch_size = agent.batch_size
+if batch_size:
+    env_id = textworld.gym.make_batch(env_id, batch_size=batch_size, parallel=True)
+else:
+    pass
 # TODO: add parallel environments
 env = gym.make(env_id)
-state, info = env.reset()  # in the case of batch_size state is [batch_size, state text] dimensional
+state, info = env.reset()
+# in the case of batch_size state is [batch_size, state text] dimensional
 # and info is still dict of several keys ("admissible commands", "verbs", "entities", etc.),
-#  but every value is batch-size length list, which elements are
+# but every value is batch-size length list, which elements are as usual
 
 entropy = []
 loss = []

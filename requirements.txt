@@ -7,3 +7,8 @@ fire
 jsonnet
 overrides
 pytorch_pretrained_bert
+torch
+nltk
+yaml
+matplotlib
+

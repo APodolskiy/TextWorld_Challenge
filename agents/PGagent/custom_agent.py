@@ -15,19 +15,34 @@ class CustomAgent:
         # agent configuration
         with open('./config.yaml') as config_file:
             self.config = yaml.safe_load(config_file)
-        self.vector_size = int(self.config['training']['vector_size'])
-        self.hidden_size = int(self.config['training']['hidden_size'])
-        self.output_size = int(self.config['training']['output_size'])
-        self.gamma = float(self.config['training']['gamma'])
-        self.learning_rate = float(self.config['training']['learning_rate'])
-        self.batch_size = int(self.config['training']['batch_size'])
-        self.max_nb_steps_per_episode = int(self.config['training']['max_nb_steps_per_episode'])
+        try:
+            self.vector_size = int(self.config['training']['vector_size'])
+            self.hidden_size = int(self.config['training']['hidden_size'])
+            self.output_size = int(self.config['training']['output_size'])
+            self.gamma = float(self.config['training']['gamma'])
+            self.obs_learning_rate = float(self.config['training']['obs_learning_rate'])
+            self.act_learning_rate = float(self.config['training']['act_learning_rate'])
+            self.batch_size = int(self.config['training']['batch_size'])
+            self.max_nb_steps_per_episode = int(self.config['training']['max_nb_steps_per_episode'])
+        except KeyError:
+            print("Check and double check config.yaml file for typos and errors")
+            # set default parameters
+            self.vector_size = 50
+            self.hidden_size = 200
+            self.output_size = 100
+            self.gamma = 0.99
+            self.obs_learning_rate = 1e-3
+            self.act_learning_rate = 1e-3
+            self.batch_size = None
+            self.max_nb_steps_per_episode = 50
 
         with open("../../vocab.txt", 'r') as file:
             vocab = file.read().split('\n')
 
         # word vectors: 08.04 -> glove 50d
-        with open("/home/nik-96/Documents/datasets/glove/glove.6B.{}d.txt".format(self.vector_size)) as file:
+        # for my laptop the path is /media/nik/hdd-data/datasets/glove/
+        # and for my work pc the path is /home/nik-96/Documents/datasets/glove/
+        with open("/media/nik/hdd-data/datasets/glove/glove.6B.{}d.txt".format(self.vector_size)) as file:
             #                     word            :      vector
             self.wordVectors = {item.split(' ')[0]: np.array(item.split(' ')[1:], dtype='float')
                                 for item in file.read().split('\n')}
@@ -43,8 +58,8 @@ class CustomAgent:
         self.obs_model = Network(self.vector_size, self.hidden_size, self.output_size)
         self.act_model = Network(self.vector_size, self.hidden_size, self.output_size)
 
-        self.optimizer = torch.optim.Adam(list(self.obs_model.parameters()) + \
-                                          list(self.act_model.parameters()), lr=self.learning_rate)
+        self.obs_optimizer = torch.optim.Adam(self.obs_model.parameters(), lr=self.obs_learning_rate)
+        self.act_optimizer = torch.optim.Adam(self.act_model.parameters(), lr=self.act_learning_rate)
 
     def select_additional_infos(self) -> EnvInfos:
         """
@@ -93,6 +108,7 @@ class CustomAgent:
         request_infos.inventory = True
         request_infos.entities = True
         request_infos.verbs = True
+        request_infos.admissible_commands = True
         request_infos.extras = ["recipe"]
         return request_infos
 
@@ -201,7 +217,9 @@ class CustomAgent:
         J = torch.mean(torch.log(action_probs)*cumulative_rewards)
         self.loss = - J - 0.1*entropy
         self.loss.backward()
-        self.optimizer.step()
-        self.optimizer.zero_grad()
+        self.obs_optimizer.step()
+        self.act_optimizer.step()
+        self.obs_optimizer.zero_grad()
+        self.act_optimizer.zero_grad()
 
         return self.loss.data.numpy(), entropy.data.numpy()
