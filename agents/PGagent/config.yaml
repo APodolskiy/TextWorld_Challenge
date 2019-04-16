@@ -5,5 +5,5 @@ training:
   gamma: 0.99
   obs_learning_rate: 1e-5
   act_learning_rate: 1e-5
-  # batch_size: 16
+  batch_size: 16
   max_nb_steps_per_episode: 50

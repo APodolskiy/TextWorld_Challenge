@@ -11,7 +11,7 @@ from agents.PGagent.utils import generate_session
 agent = CustomAgent()
 # the path for my laptop is /home/nik/Documents/git/textworld/microsoft_starting_kit/sample_games
 # and for work pc is /home/nik-96/Documents/git/textworld/microsoft_starting_kit/sample_games
-game_dir = Path('/home/nik/Documents/git/textworld/microsoft_starting_kit/sample_games')
+game_dir = Path('/home/nik-96/Documents/git/textworld/microsoft_starting_kit/sample_games')
 games = list(game_dir.iterdir())
 requested_infos = agent.select_additional_infos()
 _validate_requested_infos(requested_infos)
@@ -31,9 +31,6 @@ else:
 # TODO: add parallel environments
 env = gym.make(env_id)
 state, info = env.reset()
-# in the case of batch_size state is [batch_size, state text] dimensional
-# and info is still dict of several keys ("admissible commands", "verbs", "entities", etc.),
-# but every value is batch-size length list, which elements are as usual
 
 entropy = []
 loss = []
@@ -46,8 +43,8 @@ for episode in range(500):
     loss.append(loss_value)
     entropy.append(entropy_value)
     episode_rewards.append(np.sum(rewards))
-    if episode % 49 == 0:
-        print("episode: {}, loss: {}, rewards: {}".format(episode + 1, np.mean(loss[-50:]), episode_rewards[-1]))
+    if episode % 50 == 0:
+        print("episode: {}, loss: {}, rewards: {}".format(episode, np.mean(loss[-50:]), episode_rewards[-1]))
 
 agent.save_model('./')
 
