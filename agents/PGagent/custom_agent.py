@@ -42,7 +42,7 @@ class CustomAgent:
         # word vectors: 08.04 -> glove 50d
         # for my laptop the path is /media/nik/hdd-data/datasets/glove/
         # and for my work pc the path is /home/nik-96/Documents/datasets/glove/
-        with open("/media/nik/hdd-data/datasets/glove/glove.6B.{}d.txt".format(self.vector_size)) as file:
+        with open("/home/nik-96/Documents/datasets/glove/glove.6B.{}d.txt".format(self.vector_size)) as file:
             #                     word            :      vector
             self.wordVectors = {item.split(' ')[0]: np.array(item.split(' ')[1:], dtype='float')
                                 for item in file.read().split('\n')}
@@ -169,38 +169,46 @@ class CustomAgent:
 
         return np.array(G)
 
-    def get_logits(self, state, info):
+    def get_logits(self, state, admissible_commands):
         """
         Getting logits from two neural networks
-        :param state: it's whether a [episode_length, state_dim] or [batch_size, episode_length, state_dim]
-        :param info:
-        :return:
+        :param state: string - observation from environment
+        :param admissible_commands: list of strings - possible commands in state
+        :return: list of logits from networks, length of returned list equals to length of admissible_commands list
         """
         prep_obs = self.prepare_string(state)
         obs_vector = self.obs_model(prep_obs)
-        admissible_commands = info['admissible_commands']
         command_logits = torch.zeros(len(admissible_commands))
         for i, command in enumerate(admissible_commands):
             prep_command = self.prepare_string(command)
             action_vector = self.act_model(prep_command)
             command_logits[i] = torch.dot(action_vector, obs_vector)
 
-        return admissible_commands, command_logits
+        return command_logits
 
-    def act(self, state, info):
+    def act(self, states, infos):
         """
-        :param obs: string - observation received from the environment
+        in the case of batch_size state is [batch_size, state text] dimensional
+        and info is still dict of several keys ("admissible commands", "verbs", "entities", etc.),
+        but every value is batch-size length list, which elements are as usual
+
+        :param obs: list of string by length of batch_size - observation received from the environment
         :param infos: environment additional information
         :return: action to play
         """
-        states = [self.prepare_string(obs) for obs in state] if self.batch_size else state
-        admissible_commands, command_logits = self.get_logits(states, info)
+        actions = []
+        taken_action_probs = []
+        for env in range(len(states)):
+            admissible_commands = infos["admissible_commands"][env]
+            command_logits = self.get_logits(states[env], admissible_commands)
+            command_probs = F.softmax(command_logits)
+            action = np.random.choice(admissible_commands, p=command_probs.data.numpy())
+            taken_action_prob = command_probs[admissible_commands.index(action)]
 
-        command_probs = F.softmax(command_logits)
-        action = np.random.choice(admissible_commands, p=command_probs.data.numpy())
-        taken_action_prob = command_probs[admissible_commands.index(action)]
+            actions.append(action)
+            taken_action_probs.append(taken_action_prob)
 
-        return action, taken_action_prob
+        return actions, taken_action_probs
 
     def update(self, action_probs, rewards):
         """
