@@ -210,7 +210,7 @@ class CustomAgent:
 
         return actions, taken_action_probs
 
-    def update(self, action_probs, rewards):
+    def update(self, actions_probs, rewards):
         """
         Updating agent parameters
         :param action_probs: [len(episode)]
@@ -218,11 +218,12 @@ class CustomAgent:
         :return: None
         """
         # cumulative_rewards is 2d array: episode*len(episode)
-        cumulative_rewards = torch.FloatTensor(self.get_cumulative_rewards(rewards))
-        action_probs = torch.tensor(action_probs.astype('float'), dtype=torch.float32)
-        action_probs = torch.autograd.Variable(action_probs, requires_grad=True)
-        entropy = -torch.mean(action_probs*torch.log(action_probs))
-        J = torch.mean(torch.log(action_probs)*cumulative_rewards)
+        cumulative_rewards = torch.FloatTensor(np.array([self.get_cumulative_rewards(episode_rewards)
+                                                         for episode_rewards in rewards]))
+        actions_probs = torch.tensor(actions_probs.astype('float'), dtype=torch.float32)
+        actions_probs = torch.autograd.Variable(actions_probs, requires_grad=True)
+        entropy = -torch.mean(actions_probs*torch.log(actions_probs))
+        J = torch.mean(torch.log(actions_probs)*cumulative_rewards)
         self.loss = - J - 0.1*entropy
         self.loss.backward()
         self.obs_optimizer.step()

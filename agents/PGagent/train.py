@@ -3,6 +3,7 @@ import gym
 import numpy as np
 from matplotlib import pyplot as plt
 from pathlib import Path
+from tqdm import tqdm
 from test_submission import _validate_requested_infos
 from agents.PGagent.custom_agent import CustomAgent
 from agents.PGagent.utils import generate_session
@@ -37,14 +38,14 @@ loss = []
 episode_rewards = []
 
 # training loop
-for episode in range(500):
-    action_probs, rewards = generate_session(agent, env)
-    loss_value, entropy_value = agent.update(action_probs, rewards)
+for episode in tqdm(range(1000)):
+    actions_probs, rewards = generate_session(agent, env)  # rewards shape is [batch_size, episode_length]
+    loss_value, entropy_value = agent.update(actions_probs, rewards)
     loss.append(loss_value)
     entropy.append(entropy_value)
-    episode_rewards.append(np.sum(rewards))
+    episode_rewards.append(np.mean(np.sum(rewards, axis=1)))
     if episode % 50 == 0:
-        print("episode: {}, loss: {}, rewards: {}".format(episode, np.mean(loss[-50:]), episode_rewards[-1]))
+        print("episode: {}, loss: {}, rewards: {}".format(episode, np.mean(loss[-50:]), np.mean(episode_rewards[-40:])))
 
 agent.save_model('./')
 
