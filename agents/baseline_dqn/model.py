@@ -15,12 +15,11 @@ class ModelConfig:
 
 
 class LSTM_DQN(nn.Module):
-    def __init__(self, config, word_vocab):
+    def __init__(self, config, word_vocab_size):
         super(LSTM_DQN, self).__init__()
         self.config = ModelConfig(config)
 
-        self.word_vocab_size = len(word_vocab) + 1
-        self.id2word = word_vocab
+        self.word_vocab_size = word_vocab_size
         self.embedding = nn.Embedding(self.word_vocab_size, self.config.embed_size)
         self.state_encoder = nn.LSTM(input_size=self.config.embed_size,
                                      hidden_size=self.config.h_size, batch_first=True)
@@ -36,7 +35,7 @@ class LSTM_DQN(nn.Module):
                                                 out_features=self.config.h_size)
         self.nonlin = nn.ELU()
 
-    def forward(self, description: List[int], commands: List[List[List[int]]], max_score: int = 3):
+    def forward(self, description: List[List[int]], commands: List[List[List[int]]], max_score: int = 3):
         # description embedding
         description_emb = self.embedding(description)
         _, (s_h, s_c) = self.state_encoder(description_emb)

@@ -17,7 +17,7 @@ import torch.multiprocessing as mp
 from agents.baseline_distributed.model import LSTM_DQN
 from agents.baseline_distributed.data_utils.preprocess import preprocess, SEP_TOKEN, ITM_TOKEN
 from agents.utils.eps_scheduler import LinearScheduler
-from agents.utils.generic import _words_to_ids
+from agents.utils.generic import _words_to_ids, pad_sequences
 
 
 class Actor(mp.Process):
@@ -51,7 +51,8 @@ class Actor(mp.Process):
         self.batch_size = self.config['training']['batch_size']
         self.max_nb_steps_per_episode = self.config['training']['max_nb_steps_per_episode']
 
-        self.model = LSTM_DQN(config=self.config["model"], word_vocab=self.word_vocab)
+        self.model = LSTM_DQN(config=self.config["model"],
+                              word_vocab_size=len(self.word_vocab) + 2)
         self.nlp = spacy.load('en', disable=['ner', 'parser', 'tagger'])
 
         self.eps = eps
@@ -74,7 +75,6 @@ class Actor(mp.Process):
                                               self.request_infos,
                                               max_episode_steps=200,
                                               name='training')
-        env_id = textworld.gym.make_batch(env_id, batch_size=1, parallel=False)
         env = gym.make(env_id)
         for epoch_no in range(self.NUM_EPOCHS):
             stats = {
@@ -86,9 +86,10 @@ class Actor(mp.Process):
                 obs, infos = env.reset()
                 done, score = False, 0
                 while not done:
-                    action = self.act(obs[0], infos, score, done)
+                    action = self.act(obs, infos, score, done)
                     obs, score, done, infos = env.step(action)
                     steps += 1
+                    print(f"Action: {action}\nObs: {obs}")
                 stats["scores"].append(score)
                 stats["steps"].append(steps)
 
@@ -99,25 +100,25 @@ class Actor(mp.Process):
         commands_description, commands_ids = self.get_commands_description(admissible_commands)
 
         # Choose action
-        if random.random() < self.eps:
+        if random() < self.eps:
             chosen_command_idx = np.random.choice(len(admissible_commands))
         else:
             with torch.no_grad():
-                q_values = self.model(state_description, commands_description)
+                q_values = self.model(state_description.unsqueeze(0), [commands_description])[0]
                 chosen_command_idx = q_values.argmax().item()
         action = admissible_commands[chosen_command_idx]
         return action
 
     def get_game_state_info(self, obs: str, infos: Dict[str, Any]) -> Tuple[torch.Tensor, List]:
-        description_tokens = preprocess(infos["description"][0], "description", tokenizer=self.nlp)
+        description_tokens = preprocess(infos["description"], "description", tokenizer=self.nlp)
         if len(description_tokens) == 0:
             description_tokens = ["end"]
         description_ids = _words_to_ids(description_tokens, self.word2id)
 
-        inventory_tokens = preprocess(infos["inventory"][0], "inventory", tokenizer=self.nlp)
+        inventory_tokens = preprocess(infos["inventory"], "inventory", tokenizer=self.nlp)
         inventory_ids = _words_to_ids(inventory_tokens, self.word2id)
 
-        recipe_tokens = preprocess(infos["extra.recipe"][0], "recipe", tokenizer=self.nlp)
+        recipe_tokens = preprocess(infos["extra.recipe"], "recipe", tokenizer=self.nlp)
         recipe_ids = _words_to_ids(recipe_tokens, self.word2id)
 
         feedback_tokens = preprocess(obs, "feedback", tokenizer=self.nlp)
@@ -130,7 +131,8 @@ class Actor(mp.Process):
     def get_commands_description(self, commands: List[str]):
         commands_tokens = [preprocess(item, "command", tokenizer=self.nlp) for item in commands]
         commands_ids = [_words_to_ids(tokens, self.word2id) for tokens in commands_tokens]
-        commands_description = torch.tensor(commands_ids, dtype=torch.long)
+        commands_ids_pad = pad_sequences(commands_ids).astype('int32')
+        commands_description = torch.tensor(commands_ids_pad, dtype=torch.long)
         return commands_description, commands_ids
 
     # TODO: replace load_vocab method with the argument in constructor

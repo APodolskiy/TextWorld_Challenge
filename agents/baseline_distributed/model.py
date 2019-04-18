@@ -15,12 +15,11 @@ class ModelConfig:
 
 
 class LSTM_DQN(nn.Module):
-    def __init__(self, config, word_vocab):
+    def __init__(self, config, word_vocab_size):
         super(LSTM_DQN, self).__init__()
         self.config = ModelConfig(config)
 
-        self.word_vocab_size = len(word_vocab) + 1
-        self.id2word = word_vocab
+        self.word_vocab_size = word_vocab_size
         self.embedding = nn.Embedding(self.word_vocab_size, self.config.embed_size)
         self.state_encoder = nn.LSTM(input_size=self.config.embed_size,
                                      hidden_size=self.config.h_size, batch_first=True)
@@ -42,7 +41,7 @@ class LSTM_DQN(nn.Module):
         _, (s_h, s_c) = self.state_encoder(description_emb)
         s_h = s_h.squeeze(0)
         s_c = s_c.squeeze(0)
-        #state = self.hidden_to_hidden_state(self.nonlin(self.state_to_hidden(s_h)))
+        # state = self.hidden_to_hidden_state(self.nonlin(self.state_to_hidden(s_h)))
         state = self.state_to_hidden(s_h)
         # command embedding
         # TODO: add pack_padded_sequence
@@ -50,15 +49,15 @@ class LSTM_DQN(nn.Module):
         for idx, command_tokens in enumerate(commands):
             command_num = command_tokens.size(0)
             commands_emb = self.embedding(command_tokens)
-            _, (a_h, a_c) = self.action_encoder(commands_emb#,
-                                                #(s_h[idx].repeat(1, command_num, 1),
+            _, (a_h, a_c) = self.action_encoder(commands_emb  # ,
+                                                # (s_h[idx].repeat(1, command_num, 1),
                                                 # s_c[idx].repeat(1, command_num, 1))
                                                 )
 
-            #action = self.hidden_to_hidden_act(self.nonlin(self.action_to_hidden(a_h.squeeze(0))))
+            # action = self.hidden_to_hidden_act(self.nonlin(self.action_to_hidden(a_h.squeeze(0))))
             action = self.action_to_hidden(a_h.squeeze(0))
             # env_q_values = (s_h[idx] * a_h).sum(dim=-1).squeeze(0)
             env_q_values = 3 * torch.cosine_similarity(state[idx].unsqueeze(0), action)
-            #env_q_values = 3 * torch.cosine_similarity(state[idx].repeat(command_num, 1), a_h.squeeze(0))
+            # env_q_values = 3 * torch.cosine_similarity(state[idx].repeat(command_num, 1), a_h.squeeze(0))
             q_values.append(env_q_values)
         return q_values

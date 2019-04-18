@@ -44,8 +44,10 @@ class CustomAgent:
         self.max_nb_steps_per_episode = self.config['training']['max_nb_steps_per_episode']
 
         self.use_cuda = True and torch.cuda.is_available()
-        self.model = LSTM_DQN(config=self.config["model"], word_vocab=self.word_vocab)
-        self.target_model = LSTM_DQN(config=self.config["model"], word_vocab=self.word_vocab)
+        self.model = LSTM_DQN(config=self.config["model"],
+                              word_vocab_size=len(self.word_vocab) + 1)
+        self.target_model = LSTM_DQN(config=self.config["model"],
+                                     word_vocab_size=len(self.word_vocab) + 1)
         self.target_model.load_state_dict(self.model.state_dict())
         self.optimizer = optim.Adam(self.model.parameters(), lr=1e-3)
         if self.use_cuda:
