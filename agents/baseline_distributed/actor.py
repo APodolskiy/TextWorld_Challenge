@@ -15,7 +15,7 @@ import torch
 import torch.multiprocessing as mp
 
 from agents.baseline_distributed.model import LSTM_DQN
-from agents.baseline_distributed.data_utils.preprocess import preprocess, SEP_TOKEN, ITM_TOKEN
+from agents.baseline_distributed.utils.preprocess import preprocess, SEP_TOKEN, ITM_TOKEN
 from agents.utils.eps_scheduler import LinearScheduler
 from agents.utils.generic import _words_to_ids, pad_sequences
 
