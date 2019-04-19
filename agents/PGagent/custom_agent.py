@@ -7,7 +7,7 @@ import textworld
 import nltk
 import yaml
 from textworld import EnvInfos
-from agents.PGagent.network import Network
+from agents.PGagent.network import FCNetwork
 
 
 class CustomAgent:
@@ -55,8 +55,8 @@ class CustomAgent:
         self.stemmer = nltk.stem.PorterStemmer()
 
         # simple model, taking just observation
-        self.obs_model = Network(self.vector_size, self.hidden_size, self.output_size)
-        self.act_model = Network(self.vector_size, self.hidden_size, self.output_size)
+        self.obs_model = FCNetwork(self.vector_size, self.hidden_size, self.output_size)
+        self.act_model = FCNetwork(self.vector_size, self.hidden_size, self.output_size)
 
         self.obs_optimizer = torch.optim.Adam(self.obs_model.parameters(), lr=self.obs_learning_rate)
         self.act_optimizer = torch.optim.Adam(self.act_model.parameters(), lr=self.act_learning_rate)
