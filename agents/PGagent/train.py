@@ -3,10 +3,11 @@ import gym
 import numpy as np
 from matplotlib import pyplot as plt
 from pathlib import Path
-from tqdm import tqdm
+from tqdm import trange
 from test_submission import _validate_requested_infos
 from agents.PGagent.custom_agent import CustomAgent
 from agents.PGagent.utils import generate_session
+from tensorboardX import SummaryWriter
 
 
 agent = CustomAgent()
@@ -33,29 +34,19 @@ else:
 env = gym.make(env_id)
 state, info = env.reset()
 
-entropy = []
-loss = []
-episode_rewards = []
+print("[INFO] training process")
+# in directory of that file run tensorboard logdir='./'
+writer = SummaryWriter()
 
 # training loop
-for episode in tqdm(range(1000)):
-    actions_probs, rewards = generate_session(agent, env)  # rewards shape is [batch_size, episode_length]
+for episode in trange(1000):
+    actions_probs, rewards = generate_session(agent, env)  # action_probs and rewards shape [batch_size, episode_length]
+    print(actions_probs.shape, rewards.shape)
     loss_value, entropy_value = agent.update(actions_probs, rewards)
-    loss.append(loss_value)
-    entropy.append(entropy_value)
-    episode_rewards.append(np.mean(np.sum(rewards, axis=1)))
-    if episode % 50 == 0:
-        print("episode: {}, loss: {}, rewards: {}".format(episode, np.mean(loss[-50:]), np.mean(episode_rewards[-40:])))
+    # tensorboardX stuff
+    writer.add_scalar("loss", loss_value, episode)
+    writer.add_scalar("reward", np.mean(rewards), episode)
+    writer.add_scalar("entropy", entropy_value, episode)
+    writer.add_histogram("rewards batch distributions", np.mean(rewards, axis=0), episode)
 
 agent.save_model('./')
-
-plt.subplot(311)
-plt.plot(loss)
-plt.title("Loss")
-plt.subplot(312)
-plt.plot(entropy)
-plt.title("Entropy")
-plt.subplot(313)
-plt.plot(episode_rewards)
-plt.title("Episode reward")
-plt.show()
