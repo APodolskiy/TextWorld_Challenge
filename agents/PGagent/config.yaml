@@ -1,9 +1,10 @@
 training:
-  vector_size: 50
+  vector_size: 300
   hidden_size: 400
   output_size: 200
   gamma: 0.99
-  obs_learning_rate: 1e-6
-  act_learning_rate: 1e-6
-  batch_size: 32
+  obs_learning_rate: 1e-4
+  act_learning_rate: 1e-5
+  batch_size: 16
   max_nb_steps_per_episode: 50
+  entropy_coefficient: 0.1
