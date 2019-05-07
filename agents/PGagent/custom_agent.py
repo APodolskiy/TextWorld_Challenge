@@ -24,8 +24,9 @@ class CustomAgent:
             self.act_learning_rate = float(self.config['training']['act_learning_rate'])
             self.batch_size = int(self.config['training']['batch_size'])
             self.max_nb_steps_per_episode = int(self.config['training']['max_nb_steps_per_episode'])
+            self.entropy_coef = float(self.config['training']['entropy_coefficient'])
         except KeyError:
-            print("Check and double check config.yaml file for typos and errors")
+            print("Check and double check config.yaml file for typos and errors, parameters will be set to default")
             # set default parameters
             self.vector_size = 50
             self.hidden_size = 200
@@ -35,14 +36,16 @@ class CustomAgent:
             self.act_learning_rate = 1e-3
             self.batch_size = None
             self.max_nb_steps_per_episode = 50
+            self.entropy_coef = 0.1
 
         with open("../../vocab.txt", 'r') as file:
             vocab = file.read().split('\n')
 
-        # word vectors: 08.04 -> glove 50d
+        # word vectors: 08.04 -> glove 50d | 07.05 -> fasttext wiki-news-300d-1M.vec
         # for my laptop the path is /media/nik/hdd-data/datasets/glove/
         # and for my work pc the path is /home/nik-96/Documents/datasets/glove/
-        with open("/home/nik-96/Documents/datasets/glove/glove.6B.{}d.txt".format(self.vector_size)) as file:
+        # with open("/home/nik-96/Documents/datasets/glove/glove.6B.{}d.txt".format(self.vector_size)) as file:
+        with open('/home/nik-96/Documents/datasets/fasttext/wiki-news-300d-1M.vec') as file:
             #                     word            :      vector
             self.wordVectors = {item.split(' ')[0]: np.array(item.split(' ')[1:], dtype='float')
                                 for item in file.read().split('\n')}
@@ -208,23 +211,26 @@ class CustomAgent:
             actions.append(action)
             taken_action_probs.append(taken_action_prob)
 
-        return actions, taken_action_probs
+        return actions, np.array(taken_action_probs)
 
     def update(self, actions_probs, rewards):
         """
         Updating agent parameters
-        :param action_probs: [len(episode)]
-        :param rewards: [len(episode)]
+        :param action_probs: [len(episode), batch_size]
+        :param rewards: [len(episode), batch_size]
         :return: None
         """
         # cumulative_rewards is 2d array: episode*len(episode)
+        # TODO: add padding for episode rewards
+        # here is bug about episode length - is some episode ends quicker than self.max_nb_steps_per_episode
+        # then there will be different length vectors consisting matrix - BUG :)
         cumulative_rewards = torch.FloatTensor(np.array([self.get_cumulative_rewards(episode_rewards)
                                                          for episode_rewards in rewards]))
         actions_probs = torch.tensor(actions_probs.astype('float'), dtype=torch.float32)
         actions_probs = torch.autograd.Variable(actions_probs, requires_grad=True)
         entropy = -torch.mean(actions_probs*torch.log(actions_probs))
         J = torch.mean(torch.log(actions_probs)*cumulative_rewards)
-        self.loss = - J - 0.1*entropy
+        self.loss = - J - self.entropy_coef*entropy
         self.loss.backward()
         self.obs_optimizer.step()
         self.act_optimizer.step()
