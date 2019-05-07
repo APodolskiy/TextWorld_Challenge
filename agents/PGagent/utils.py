@@ -2,19 +2,19 @@ import numpy as np
 
 
 def generate_session(agent, env, tmax=1000):
-    rewards, actions_probs = [], []
-    state, infos = env.reset()
+    rewards_sequence, actions_probs = [], []
+    states, infos = env.reset()
 
     for t in range(tmax):
-        actions, actions_prob = agent.act(state, infos)
-        next_state, reward, done, infos = env.step(actions)
+        actions, actions_prob = agent.act(states, infos)
+        next_states, rewards, dones, infos = env.step(actions)
 
         actions_probs.append(actions_prob)
-        rewards.append(reward)
+        rewards_sequence.append(rewards)
 
-        state = next_state
+        states = next_states
 
-        if done:
+        if all(dones):
             break
 
-    return np.array(actions_probs), np.array(rewards)
+    return np.array(actions_probs).T, np.array(rewards_sequence).T
