@@ -44,8 +44,8 @@ class CustomAgent:
         # word vectors: 08.04 -> glove 50d | 07.05 -> fasttext wiki-news-300d-1M.vec
         # for my laptop the path is /media/nik/hdd-data/datasets/glove/
         # and for my work pc the path is /home/nik-96/Documents/datasets/glove/
-        # with open("/home/nik-96/Documents/datasets/glove/glove.6B.{}d.txt".format(self.vector_size)) as file:
-        with open('/home/nik-96/Documents/datasets/fasttext/wiki-news-300d-1M.vec') as file:
+        with open("/media/nik/hdd-data/datasets/glove/glove.6B.{}d.txt".format(self.vector_size)) as file:
+            # with open('/home/nik-96/Documents/datasets/fasttext/wiki-news-300d-1M.vec') as file:
             #                     word            :      vector
             self.wordVectors = {item.split(' ')[0]: np.array(item.split(' ')[1:], dtype='float')
                                 for item in file.read().split('\n')}
@@ -213,7 +213,7 @@ class CustomAgent:
 
         return actions, np.array(taken_action_probs)
 
-    def update(self, actions_probs, rewards):
+    def update(self, actions_probs, batch_rewards):
         """
         Updating agent parameters
         :param action_probs: [len(episode), batch_size]
@@ -221,12 +221,12 @@ class CustomAgent:
         :return: None
         """
         # cumulative_rewards is 2d array: episode*len(episode)
-        # TODO: add padding for episode rewards
-        # here is bug about episode length - is some episode ends quicker than self.max_nb_steps_per_episode
-        # then there will be different length vectors consisting matrix - BUG :)
-        cumulative_rewards = torch.FloatTensor(np.array([self.get_cumulative_rewards(episode_rewards)
-                                                         for episode_rewards in rewards]))
-        actions_probs = torch.tensor(actions_probs.astype('float'), dtype=torch.float32)
+        batch_rewards = nn.utils.rnn.pad_sequence([torch.FloatTensor(r) for r in batch_rewards])
+        batch_rewards = batch_rewards.transpose(1, 0)
+        batch_rewards = np.array([self.get_cumulative_rewards(episode_rewards)
+                                  for episode_rewards in batch_rewards])
+        cumulative_rewards = torch.FloatTensor(batch_rewards)
+        actions_probs = torch.tensor(np.array(actions_probs).astype('float'), dtype=torch.float32)
         actions_probs = torch.autograd.Variable(actions_probs, requires_grad=True)
         entropy = -torch.mean(actions_probs*torch.log(actions_probs))
         J = torch.mean(torch.log(actions_probs)*cumulative_rewards)

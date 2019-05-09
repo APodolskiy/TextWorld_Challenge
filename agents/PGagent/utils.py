@@ -17,4 +17,4 @@ def generate_session(agent, env, tmax=1000):
         if all(dones):
             break
 
-    return np.array(actions_probs).T, np.array(rewards_sequence).T
+    return actions_probs, rewards_sequence
