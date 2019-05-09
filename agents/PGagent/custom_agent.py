@@ -172,11 +172,12 @@ class CustomAgent:
 
         return np.array(G)
 
-    def get_logits(self, state, admissible_commands):
+    def get_logits(self, state, admissible_commands, recipe):
         """
         Getting logits from two neural networks
         :param state: string - observation from environment
         :param admissible_commands: list of strings - possible commands in state
+        :param recipe: string - recipe description
         :return: list of logits from networks, length of returned list equals to length of admissible_commands list
         """
         prep_obs = self.prepare_string(state)
@@ -203,7 +204,7 @@ class CustomAgent:
         taken_action_probs = []
         for env in range(len(states)):
             admissible_commands = infos["admissible_commands"][env]
-            command_logits = self.get_logits(states[env], admissible_commands)
+            command_logits = self.get_logits(states[env], admissible_commands, infos["extra.recipe"][env])
             command_probs = F.softmax(command_logits)
             action = np.random.choice(admissible_commands, p=command_probs.data.numpy())
             taken_action_prob = command_probs[admissible_commands.index(action)]
