@@ -195,7 +195,6 @@ class CustomAgent:
         in the case of batch_size state is [batch_size, state text] dimensional
         and info is still dict of several keys ("admissible commands", "verbs", "entities", etc.),
         but every value is batch-size length list, which elements are as usual
-
         :param obs: list of string by length of batch_size - observation received from the environment
         :param infos: environment additional information
         :return: action to play
@@ -223,14 +222,15 @@ class CustomAgent:
         """
         # cumulative_rewards is 2d array: episode*len(episode)
         batch_rewards = nn.utils.rnn.pad_sequence([torch.FloatTensor(r) for r in batch_rewards])
-        batch_rewards = batch_rewards.transpose(1, 0)
+        # now batch_rewards.shape = [batch_size, len(episode)]
         batch_rewards = np.array([self.get_cumulative_rewards(episode_rewards)
                                   for episode_rewards in batch_rewards])
         cumulative_rewards = torch.FloatTensor(batch_rewards)
-        actions_probs = torch.tensor(np.array(actions_probs).astype('float'), dtype=torch.float32)
-        actions_probs = torch.autograd.Variable(actions_probs, requires_grad=True)
-        entropy = -torch.mean(actions_probs*torch.log(actions_probs))
-        J = torch.mean(torch.log(actions_probs)*cumulative_rewards)
+        actions_probs = torch.tensor(np.array(actions_probs).astype('float'), dtype=torch.float32, requires_grad=True)
+        actions_probs = actions_probs.transpose(1, 0)
+        #actions_probs = torch.autograd.Variable(actions_probs, )
+        entropy = -torch.mean(torch.sum(actions_probs*torch.log(actions_probs), dim=1))
+        J = torch.mean(torch.sum(torch.log(actions_probs)*cumulative_rewards, dim=1))
         self.loss = - J - self.entropy_coef*entropy
         self.loss.backward()
         self.obs_optimizer.step()
