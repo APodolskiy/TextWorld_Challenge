@@ -1,5 +1,5 @@
 training:
-  vector_size: 300
+  vector_size: 50
   hidden_size: 400
   output_size: 200
   gamma: 0.99

@@ -13,7 +13,7 @@ from tensorboardX import SummaryWriter
 agent = CustomAgent()
 # the path for my laptop is /home/nik/Documents/git/textworld/microsoft_starting_kit/sample_games
 # and for work pc is /home/nik-96/Documents/git/textworld/microsoft_starting_kit/sample_games
-game_dir = Path('/home/nik-96/Documents/git/textworld/microsoft_starting_kit/sample_games')
+game_dir = Path('/home/nik/Documents/git/textworld/microsoft_starting_kit/sample_games')
 games = list(game_dir.iterdir())
 requested_infos = agent.select_additional_infos()
 _validate_requested_infos(requested_infos)
@@ -40,13 +40,13 @@ writer = SummaryWriter()
 
 # training loop
 for episode in trange(1000):
-    actions_probs, rewards = generate_session(agent, env)  # action_probs and rewards shape [batch_size, episode_length]
-    print(actions_probs.shape, rewards.shape)
+    actions_probs, rewards = generate_session(agent, env)  # action_probs and rewards shape [episode_length, batch_size]
+    #print(np.array(actions_probs).shape, np.array(rewards).shape)
     loss_value, entropy_value = agent.update(actions_probs, rewards)
     # tensorboardX stuff
     writer.add_scalar("loss", loss_value, episode)
-    writer.add_scalar("reward", np.mean(rewards), episode)
+    writer.add_scalar("reward", np.mean(np.sum(rewards, axis=1)), episode)
     writer.add_scalar("entropy", entropy_value, episode)
-    writer.add_histogram("rewards batch distributions", np.mean(rewards, axis=0), episode)
+    writer.add_histogram("rewards batch distributions", np.sum(rewards, axis=1))
 
 agent.save_model('./')
