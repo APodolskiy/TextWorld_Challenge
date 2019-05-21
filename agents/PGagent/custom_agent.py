@@ -2,12 +2,16 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-import gym
-import textworld
-import nltk
+import re
 import yaml
+import string as String
+from spacy.lang.en.stop_words import STOP_WORDS
 from textworld import EnvInfos
+from sklearn.preprocessing import OneHotEncoder
 from agents.PGagent.network import FCNetwork
+
+import warnings
+warnings.simplefilter('ignore')
 
 
 class CustomAgent:
@@ -20,11 +24,11 @@ class CustomAgent:
             self.hidden_size = int(self.config['training']['hidden_size'])
             self.output_size = int(self.config['training']['output_size'])
             self.gamma = float(self.config['training']['gamma'])
-            self.obs_learning_rate = float(self.config['training']['obs_learning_rate'])
-            self.act_learning_rate = float(self.config['training']['act_learning_rate'])
+            self.learning_rate = float(self.config['training']['learning_rate'])
             self.batch_size = int(self.config['training']['batch_size'])
             self.max_nb_steps_per_episode = int(self.config['training']['max_nb_steps_per_episode'])
             self.entropy_coef = float(self.config['training']['entropy_coefficient'])
+            self.device = str(self.config['training']['device'])
         except KeyError:
             print("Check and double check config.yaml file for typos and errors, parameters will be set to default")
             # set default parameters
@@ -32,37 +36,41 @@ class CustomAgent:
             self.hidden_size = 200
             self.output_size = 100
             self.gamma = 0.99
-            self.obs_learning_rate = 1e-3
-            self.act_learning_rate = 1e-3
+            self.learning_rate = 1e-4
             self.batch_size = None
             self.max_nb_steps_per_episode = 50
             self.entropy_coef = 0.1
+            self.device = 'cpu'
 
         with open("../../vocab.txt", 'r') as file:
             vocab = file.read().split('\n')
 
+        print('[AGENT INFO] Loading word vectors')
         # word vectors: 08.04 -> glove 50d | 07.05 -> fasttext wiki-news-300d-1M.vec
         # for my laptop the path is /media/nik/hdd-data/datasets/glove/
         # and for my work pc the path is /home/nik-96/Documents/datasets/glove/
-        with open("/media/nik/hdd-data/datasets/glove/glove.6B.{}d.txt".format(self.vector_size)) as file:
-            # with open('/home/nik-96/Documents/datasets/fasttext/wiki-news-300d-1M.vec') as file:
+        # with open("/media/nik/hdd-data/datasets/glove/glove.6B.{}d.txt".format(self.vector_size)) as file:
+        # 19.05 see transform_word_vectors.py, where it's formed word_vectors file from vocab.txt file
+        with open('./fasttext_word_vectors.vec') as file:
             #                     word            :      vector
-            self.wordVectors = {item.split(' ')[0]: np.array(item.split(' ')[1:], dtype='float')
-                                for item in file.read().split('\n')}
-
-        self.stopwords = set(nltk.corpus.stopwords.words('english'))
+            self.wordVectors = {word_vector.split(' ')[0]: np.array(word_vector.split(' ')[1:], dtype='float')
+                                for word_vector in file.read().split('\n')}
+            self.wordVectors.pop('')
+        print('[AGENT INFO] Word vectors were loaded')
         # word: id
         self.vocab = {word: i for i, word in enumerate(vocab)}
 
-        self.tokenizer = nltk.tokenize.WordPunctTokenizer()
-        self.stemmer = nltk.stem.PorterStemmer()
+        # TODO: add different tokenizer or simply split the string in prepare_string on spaces
+        # self.tokenizer = nltk.tokenize.WordPunctTokenizer()
+        self.trans_table = str.maketrans('\n', ' ', String.punctuation)
+        self.StringVectors = {}
 
-        # simple model, taking just observation
-        self.obs_model = FCNetwork(self.vector_size, self.hidden_size, self.output_size)
-        self.act_model = FCNetwork(self.vector_size, self.hidden_size, self.output_size)
+        # a little more serious model, taking last 4 observation
+        self.obs_model = FCNetwork(4*self.vector_size, self.hidden_size, self.output_size, self.device).to(self.device)
+        self.act_model = FCNetwork(self.vector_size, self.hidden_size, self.output_size, self.device).to(self.device)
 
-        self.obs_optimizer = torch.optim.Adam(self.obs_model.parameters(), lr=self.obs_learning_rate)
-        self.act_optimizer = torch.optim.Adam(self.act_model.parameters(), lr=self.act_learning_rate)
+        self.optimizer = torch.optim.Adam(list(self.obs_model.parameters()) + list(self.act_model.parameters()),
+                                          lr=self.learning_rate)
 
     def select_additional_infos(self) -> EnvInfos:
         """
@@ -108,6 +116,8 @@ class CustomAgent:
         """
         request_infos = EnvInfos()
         request_infos.description = True
+        request_infos.has_won = True
+        request_infos.has_lost = True
         request_infos.inventory = True
         request_infos.entities = True
         request_infos.verbs = True
@@ -115,7 +125,7 @@ class CustomAgent:
         request_infos.extras = ["recipe"]
         return request_infos
 
-    def load_pretrained_model(self, load_from):
+    def load_pretrained_model(self, load_from: str):
         """
         Load pretrained checkpoint from file.
 
@@ -132,7 +142,7 @@ class CustomAgent:
         except:
             print("[INFO] Failed to load checkpoint...")
 
-    def save_model(self, save_path):
+    def save_model(self, save_path: str):
         """
 
         :param save_path:  path to directory (without '/' in the end), where to save models
@@ -145,12 +155,22 @@ class CustomAgent:
             print("[INFO] Failed to save checkpoint...")
 
     def prepare_string(self, string):
-        string = self.tokenizer.tokenize(string)
-        string = [word for word in string if word not in self.stopwords]
-        string_vector = np.array([self.wordVectors[word] for word in string if word in self.wordVectors.keys()])
+        """
+        This function preprocesses string feedback from environment and return torch tensor of average token embeddings
+        :param string: str feedback from environment
+        :return: torch.tensor
+        """
+        # TODO: add string cashing
+        string_vector_ = self.StringVectors.get(string, None)
+        if string_vector_ is not None:
+            return torch.FloatTensor(string_vector_)
+        prep_string = re.split(' ', re.sub('[ ]+', ' ', string.lower().translate(self.trans_table)))
+        string_vector = np.array([self.wordVectors[word] for word in prep_string
+                                  if word in self.wordVectors and word not in STOP_WORDS])
         string_vector = np.mean(string_vector, axis=0)
+        self.StringVectors[string] = string_vector
 
-        return string_vector
+        return torch.FloatTensor(string_vector)
 
     def get_cumulative_rewards(self, rewards):
         """
@@ -180,11 +200,14 @@ class CustomAgent:
         :param recipe: string - recipe description
         :return: list of logits from networks, length of returned list equals to length of admissible_commands list
         """
-        prep_obs = self.prepare_string(state)
+        # TODO: move prepared string to self.device
+        prep_obs = torch.stack([torch.zeros(self.vector_size) if item == '' else self.prepare_string(item)
+                                for item in state])
+        prep_obs = prep_obs.reshape(-1).to(self.device)
         obs_vector = self.obs_model(prep_obs)
         command_logits = torch.zeros(len(admissible_commands))
         for i, command in enumerate(admissible_commands):
-            prep_command = self.prepare_string(command)
+            prep_command = self.prepare_string(command).to(self.device)
             action_vector = self.act_model(prep_command)
             command_logits[i] = torch.dot(action_vector, obs_vector)
 
@@ -197,21 +220,26 @@ class CustomAgent:
         but every value is batch-size length list, which elements are as usual
         :param obs: list of string by length of batch_size - observation received from the environment
         :param infos: environment additional information
-        :return: action to play
+        :return: actions - list of str - actions to play,
         """
         actions = []
         taken_action_probs = []
+        states = [[i1, i2, i3, i4] for i1, i2, i3, i4 in zip(*states)]
         for env in range(len(states)):
             admissible_commands = infos["admissible_commands"][env]
             command_logits = self.get_logits(states[env], admissible_commands, infos["extra.recipe"][env])
-            command_probs = F.softmax(command_logits)
-            action = np.random.choice(admissible_commands, p=command_probs.data.numpy())
-            taken_action_prob = command_probs[admissible_commands.index(action)]
-
+            command_probs = F.softmax(command_logits).to(self.device)
+            action = np.random.choice(admissible_commands, p=command_probs.cpu().data.numpy())
+            encoder = OneHotEncoder()
+            encoder.fit([[i] for i in range(len(admissible_commands))])
+            index = admissible_commands.index(action)
+            one_hot_index = encoder.transform([[index]]).toarray()
+            one_hot_action = torch.FloatTensor(one_hot_index).squeeze().to(self.device)
+            taken_action_prob = torch.dot(command_probs, one_hot_action)
             actions.append(action)
             taken_action_probs.append(taken_action_prob)
 
-        return actions, np.array(taken_action_probs)
+        return actions, torch.stack(taken_action_probs).to(self.device)
 
     def update(self, actions_probs, batch_rewards):
         """
@@ -225,17 +253,13 @@ class CustomAgent:
         # now batch_rewards.shape = [batch_size, len(episode)]
         batch_rewards = np.array([self.get_cumulative_rewards(episode_rewards)
                                   for episode_rewards in batch_rewards])
-        cumulative_rewards = torch.FloatTensor(batch_rewards)
-        actions_probs = torch.tensor(np.array(actions_probs).astype('float'), dtype=torch.float32, requires_grad=True)
-        actions_probs = actions_probs.transpose(1, 0)
-        #actions_probs = torch.autograd.Variable(actions_probs, )
-        entropy = -torch.mean(torch.sum(actions_probs*torch.log(actions_probs), dim=1))
-        J = torch.mean(torch.sum(torch.log(actions_probs)*cumulative_rewards, dim=1))
-        self.loss = - J - self.entropy_coef*entropy
+        cumulative_rewards = torch.FloatTensor(batch_rewards).to(self.device)
+        actions_probs = torch.nn.utils.rnn.pad_sequence(actions_probs)
+        entropy = -torch.mean(actions_probs*torch.log(actions_probs))
+        J = torch.mean(torch.log(actions_probs)*cumulative_rewards)
+        self.loss = -J - self.entropy_coef*entropy
         self.loss.backward()
-        self.obs_optimizer.step()
-        self.act_optimizer.step()
-        self.obs_optimizer.zero_grad()
-        self.act_optimizer.zero_grad()
+        self.optimizer.step()
+        self.optimizer.zero_grad()
 
-        return self.loss.data.numpy(), entropy.data.numpy()
+        return self.loss.cpu().data.numpy(), entropy.cpu().data.numpy()
