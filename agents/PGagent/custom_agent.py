@@ -9,6 +9,7 @@ from spacy.lang.en.stop_words import STOP_WORDS
 from textworld import EnvInfos
 from sklearn.preprocessing import OneHotEncoder
 from agents.PGagent.network import FCNetwork
+from os.path import realpath as path
 
 import warnings
 warnings.simplefilter('ignore')
@@ -42,6 +43,17 @@ class CustomAgent:
             self.entropy_coef = 0.1
             self.device = 'cpu'
 
+        self.params = {'vector_size': self.vector_size,
+                       'hidden_size': self.hidden_size,
+                       'output_size': self.output_size,
+                       'gamma': self.gamma,
+                       'self.learning_rate':  self.learning_rate,
+                       'batch_size': self.batch_size,
+                       'max_nb_steps_per_episode': self.max_nb_steps_per_episode,
+                       'entropy_coef': self.entropy_coef,
+                       'self.device': self.device
+        }
+
         with open("../../vocab.txt", 'r') as file:
             vocab = file.read().split('\n')
 
@@ -60,8 +72,6 @@ class CustomAgent:
         # word: id
         self.vocab = {word: i for i, word in enumerate(vocab)}
 
-        # TODO: add different tokenizer or simply split the string in prepare_string on spaces
-        # self.tokenizer = nltk.tokenize.WordPunctTokenizer()
         self.trans_table = str.maketrans('\n', ' ', String.punctuation)
         self.StringVectors = {}
 
@@ -128,11 +138,9 @@ class CustomAgent:
     def load_pretrained_model(self, load_from: str):
         """
         Load pretrained checkpoint from file.
-
-        Arguments:
-            load_from: path to directory (without '/' in the end), that contains obs model and act model
+        :param load_from: path to directory (without '/' in the end), that contains obs model and act model
         """
-        print("[INFO] Loading model from %s\n" % load_from)
+        print(f"\n[INFO] Loading model from {load_from}\n")
         try:
 
             obs_state_dict = torch.load(load_from + '/obs_model.pt')
@@ -144,13 +152,13 @@ class CustomAgent:
 
     def save_model(self, save_path: str):
         """
-
-        :param save_path:  path to directory (without '/' in the end), where to save models
+        Save checkpoint to file.
+        :param save_path: path to directory (without '/' in the end), where to save models
         """
-        print(f"[INFO] Saving model to {save_path}\n")
+        print(f"\n[INFO] Saving model to {path(save_path) + '/'}")
         try:
-            torch.save(self.obs_model.state_dict(), save_path + '/obs_model.pt')
-            torch.save(self.act_model.state_dict(), save_path + '/act_model.pt')
+            torch.save(self.obs_model.state_dict(), save_path + f'/obs_model.pt')
+            torch.save(self.act_model.state_dict(), save_path + f'/act_model.pt')
         except:
             print("[INFO] Failed to save checkpoint...")
 
@@ -205,11 +213,12 @@ class CustomAgent:
                                 for item in state])
         prep_obs = prep_obs.reshape(-1).to(self.device)
         obs_vector = self.obs_model(prep_obs)
+        recipe_vector = self.prepare_string(recipe).to(self.device)
         command_logits = torch.zeros(len(admissible_commands))
         for i, command in enumerate(admissible_commands):
             prep_command = self.prepare_string(command).to(self.device)
             action_vector = self.act_model(prep_command)
-            command_logits[i] = torch.dot(action_vector, obs_vector)
+            command_logits[i] = torch.dot(action_vector, obs_vector)*torch.dot(prep_command, recipe_vector)
 
         return command_logits
 
