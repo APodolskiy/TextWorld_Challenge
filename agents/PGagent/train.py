@@ -1,6 +1,8 @@
 import textworld
 import gym
 import numpy as np
+import os
+from datetime import datetime
 from pathlib import Path
 from tqdm import trange
 from test_submission import _validate_requested_infos
@@ -35,6 +37,18 @@ print("[INFO] training process")
 # in directory of that file run tensorboard logdir='./'
 writer = SummaryWriter()
 
+EPOCHS = 1000
+
+# logging
+now = datetime.now()
+logs_filename = f'./logs/0{now.month}{now.day}_{now.hour}:{now.minute if now.minute > 9 else "0" + str(now.minute)}'
+with open(logs_filename, 'w') as f:
+    for property, value in agent.params.items():
+        f.write(f'{property}: {value}\n')
+    f.write(f'epochs: {EPOCHS}')
+
+os.mkdir('./models')
+
 # training loop
 for episode in trange(1000):
     actions_probs, rewards, won_games, lost_games = generate_session(agent, env)
@@ -46,6 +60,10 @@ for episode in trange(1000):
     writer.add_scalar("entropy", entropy_value, episode)
     writer.add_scalar("won games", won_games, episode)
     writer.add_scalar("lost games", lost_games, episode)
+    # TODO: get correct distribution
     writer.add_histogram("rewards batch distributions", np.sum(rewards, axis=0))
-
-agent.save_model('./')
+    if episode % 5 == 0:
+        if episode != 0:
+            # model checkpoints saving
+            os.mkdir(os.path.dirname(os.path.abspath(__file__)) + '/models' + f'/{episode}_episode')
+            agent.save_model(os.path.dirname(os.path.abspath(__file__)) + '/models' + f'/{episode}_episode')
