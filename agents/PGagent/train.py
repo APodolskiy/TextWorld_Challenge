@@ -11,6 +11,7 @@ from agents.PGagent.utils import generate_session
 from tensorboardX import SummaryWriter
 
 agent = CustomAgent()
+
 # the path for my laptop is /home/nik/Documents/git/textworld/microsoft_starting_kit/sample_games
 # and for work pc is /home/nik-96/Documents/git/textworld/microsoft_starting_kit/sample_games
 game_dir = Path('/home/nik-96/Documents/git/textworld/microsoft_starting_kit/sample_games')
@@ -47,8 +48,6 @@ with open(logs_filename, 'w') as f:
         f.write(f'{property}: {value}\n')
     f.write(f'epochs: {EPOCHS}')
 
-os.mkdir('./models')
-
 # training loop
 for episode in trange(1000):
     actions_probs, rewards, won_games, lost_games = generate_session(agent, env)
@@ -62,8 +61,9 @@ for episode in trange(1000):
     writer.add_scalar("lost games", lost_games, episode)
     # TODO: get correct distribution
     writer.add_histogram("rewards batch distributions", np.sum(rewards, axis=0))
-    if episode % 5 == 0:
+    if episode % 100 == 0:
         if episode != 0:
             # model checkpoints saving
-            os.mkdir(os.path.dirname(os.path.abspath(__file__)) + '/models' + f'/{episode}_episode')
-            agent.save_model(os.path.dirname(os.path.abspath(__file__)) + '/models' + f'/{episode}_episode')
+            os.mkdir(os.path.dirname(os.path.abspath(__file__)) + '/models' + f'/episode_{episode}')
+            agent.save_model(os.path.dirname(os.path.abspath(__file__)) + '/models' +
+                             f'/{logs_filename}_episode_{episode}')

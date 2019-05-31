@@ -218,7 +218,7 @@ class CustomAgent:
         for i, command in enumerate(admissible_commands):
             prep_command = self.prepare_string(command).to(self.device)
             action_vector = self.act_model(prep_command)
-            command_logits[i] = torch.dot(action_vector, obs_vector)*torch.dot(prep_command, recipe_vector)
+            command_logits[i] = torch.dot(action_vector, obs_vector) + torch.dot(prep_command, recipe_vector)
 
         return command_logits
 
@@ -253,9 +253,9 @@ class CustomAgent:
     def update(self, actions_probs, batch_rewards):
         """
         Updating agent parameters
-        :param action_probs: [len(episode), batch_size]
-        :param rewards: [len(episode), batch_size]
-        :return: None
+        :param actions_probs: [len(episode), batch_size]
+        :param batch_rewards: [len(episode), batch_size]
+        :return: loss and entropy
         """
         # cumulative_rewards is 2d array: episode*len(episode)
         batch_rewards = nn.utils.rnn.pad_sequence([torch.FloatTensor(r) for r in batch_rewards])
@@ -265,7 +265,7 @@ class CustomAgent:
         cumulative_rewards = torch.FloatTensor(batch_rewards).to(self.device)
         actions_probs = torch.nn.utils.rnn.pad_sequence(actions_probs)
         entropy = -torch.mean(actions_probs*torch.log(actions_probs))
-        J = torch.mean(torch.log(actions_probs)*cumulative_rewards)
+        J = torch.mean(torch.log(actions_probs)*torch.sum(cumulative_rewards))
         self.loss = -J - self.entropy_coef*entropy
         self.loss.backward()
         self.optimizer.step()
