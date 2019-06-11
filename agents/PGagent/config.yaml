@@ -8,3 +8,6 @@ training:
   max_nb_steps_per_episode: 50
   entropy_coefficient: 0.01
   device: cpu
+testing:
+  test_time: True
+  use_pretrained_model: True

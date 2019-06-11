@@ -10,6 +10,7 @@ from textworld import EnvInfos
 from sklearn.preprocessing import OneHotEncoder
 from agents.PGagent.network import FCNetwork
 from os.path import realpath as path
+from collections import deque
 
 import warnings
 warnings.simplefilter('ignore')
@@ -18,7 +19,7 @@ warnings.simplefilter('ignore')
 class CustomAgent:
     def __init__(self):
         # agent configuration
-        with open('./config.yaml') as config_file:
+        with open('/home/nik-96/Documents/git/TextWorld_Challenge/agents/PGagent/config.yaml') as config_file:
             self.config = yaml.safe_load(config_file)
         try:
             self.vector_size = int(self.config['training']['vector_size'])
@@ -30,6 +31,8 @@ class CustomAgent:
             self.max_nb_steps_per_episode = int(self.config['training']['max_nb_steps_per_episode'])
             self.entropy_coef = float(self.config['training']['entropy_coefficient'])
             self.device = str(self.config['training']['device'])
+            self.use_pretrained_model = bool(self.config["testing"]["use_pretrained_model"])
+            self.test_time = bool(self.config["testing"]["test_time"])
         except KeyError:
             print("Check and double check config.yaml file for typos and errors, parameters will be set to default")
             # set default parameters
@@ -42,6 +45,8 @@ class CustomAgent:
             self.max_nb_steps_per_episode = 50
             self.entropy_coef = 0.1
             self.device = 'cpu'
+            self.use_pretrained_model = False
+            self.test_time = False
 
         self.params = {'vector_size': self.vector_size,
                        'hidden_size': self.hidden_size,
@@ -54,7 +59,7 @@ class CustomAgent:
                        'self.device': self.device
         }
 
-        with open("../../vocab.txt", 'r') as file:
+        with open("/home/nik-96/Documents/git/TextWorld_Challenge/vocab.txt", 'r') as file:
             vocab = file.read().split('\n')
 
         print('[AGENT INFO] Loading word vectors')
@@ -63,7 +68,7 @@ class CustomAgent:
         # and for my work pc the path is /home/nik-96/Documents/datasets/glove/
         # with open("/media/nik/hdd-data/datasets/glove/glove.6B.{}d.txt".format(self.vector_size)) as file:
         # 19.05 see transform_word_vectors.py, where it's formed word_vectors file from vocab.txt file
-        with open('./fasttext_word_vectors.vec') as file:
+        with open('/home/nik-96/Documents/git/TextWorld_Challenge/agents/PGagent/fasttext_word_vectors.vec') as file:
             #                     word            :      vector
             self.wordVectors = {word_vector.split(' ')[0]: np.array(word_vector.split(' ')[1:], dtype='float')
                                 for word_vector in file.read().split('\n')}
@@ -75,7 +80,14 @@ class CustomAgent:
         self.trans_table = str.maketrans('\n', ' ', String.punctuation)
         self.StringVectors = {}
 
+        if self.use_pretrained_model and self.test_time:
+            self.load_pretrained_model('/home/nik-96/Documents/git/TextWorld_Challenge/agents/PGagent' +
+                                       '/episode_900')
+
         # a little more serious model, taking last 4 observation
+        self.state_sequence = deque(deque([['' for _ in range(self.batch_size)],
+                                           ['' for _ in range(self.batch_size)],
+                                           ['' for _ in range(self.batch_size)]], 4))
         self.obs_model = FCNetwork(4*self.vector_size, self.hidden_size, self.output_size, self.device).to(self.device)
         self.act_model = FCNetwork(self.vector_size, self.hidden_size, self.output_size, self.device).to(self.device)
 
@@ -222,6 +234,9 @@ class CustomAgent:
 
         return command_logits
 
+    def eval(self):
+        pass
+
     def act(self, states, infos):
         """
         in the case of batch_size state is [batch_size, state text] dimensional
@@ -231,9 +246,10 @@ class CustomAgent:
         :param infos: environment additional information
         :return: actions - list of str - actions to play,
         """
+        self.state_sequence.append(states)
         actions = []
         taken_action_probs = []
-        states = [[i1, i2, i3, i4] for i1, i2, i3, i4 in zip(*states)]
+        states = [[i1, i2, i3, i4] for i1, i2, i3, i4 in zip(*list(self.state_sequence))]
         for env in range(len(states)):
             admissible_commands = infos["admissible_commands"][env]
             command_logits = self.get_logits(states[env], admissible_commands, infos["extra.recipe"][env])
