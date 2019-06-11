@@ -4,11 +4,10 @@ import torch.nn.functional as F
 
 
 class FCNetwork(nn.Module):
-    def __init__(self, vector_size, hidden_size, output_size, device='cpu'):
+    def __init__(self, vector_size, hidden_size, output_size):
         super(FCNetwork, self).__init__()
         self.dense1 = nn.Linear(vector_size, hidden_size)
         self.dense2 = nn.Linear(hidden_size, output_size)
-        self.device = device
 
     def forward(self, x):
         x = self.dense1(x)
@@ -19,8 +18,16 @@ class FCNetwork(nn.Module):
 
 
 class RNNNetwork(nn.Module):
-    def __init__(self, vector_size, num_cells, hidden_size):
+    def __init__(self, vector_size, hidden_size, output_size):
         super(RNNNetwork, self).__init__()
-        self.rnn = nn.LSTM(input_size=vector_size, hidden_size=hidden_size)
+        self.rnn = nn.LSTMCell(vector_size, hidden_size)
+        self.dense1 = nn.Linear(hidden_size, output_size)
+
+    def forward(self, x, hid_state):
+        h, c = self.rnn(x, hid_state)
+        x = F.relu(h)
+        x = self.dense1(h)
+
+        return x[0], (h, c)
 
 

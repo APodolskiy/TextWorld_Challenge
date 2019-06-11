@@ -8,7 +8,7 @@ import string as String
 from spacy.lang.en.stop_words import STOP_WORDS
 from textworld import EnvInfos
 from sklearn.preprocessing import OneHotEncoder
-from agents.PGagent.network import FCNetwork
+from agents.A2Cagent.network import FCNetwork, RNNNetwork
 from os.path import realpath as path
 
 import warnings
@@ -18,18 +18,21 @@ warnings.simplefilter('ignore')
 class CustomAgent:
     def __init__(self):
         # agent configuration
-        with open('./config.yaml') as config_file:
+        with open('/home/nik-96/Documents/git/TextWorld_Challenge/agents/A2Cagent/config.yaml') as config_file:
             self.config = yaml.safe_load(config_file)
         try:
             self.vector_size = int(self.config['training']['vector_size'])
             self.hidden_size = int(self.config['training']['hidden_size'])
             self.output_size = int(self.config['training']['output_size'])
             self.gamma = float(self.config['training']['gamma'])
-            self.learning_rate = float(self.config['training']['learning_rate'])
+            self.act_lr = float(self.config['training']['actor_learning_rate'])
+            self.critic_lr = float(self.config['training']['critic_learning_rate'])
             self.batch_size = int(self.config['training']['batch_size'])
             self.max_nb_steps_per_episode = int(self.config['training']['max_nb_steps_per_episode'])
             self.entropy_coef = float(self.config['training']['entropy_coefficient'])
             self.device = str(self.config['training']['device'])
+            self.use_pretrained_model = bool(self.config["testing"]["use_pretrained_model"])
+            self.test_time = bool(self.config["testing"]["test_time"])
         except KeyError:
             print("Check and double check config.yaml file for typos and errors, parameters will be set to default")
             # set default parameters
@@ -37,24 +40,28 @@ class CustomAgent:
             self.hidden_size = 200
             self.output_size = 100
             self.gamma = 0.99
-            self.learning_rate = 1e-4
+            self.act_lr = 1e-4
+            self.critic_lr = 1e-4
             self.batch_size = None
             self.max_nb_steps_per_episode = 50
             self.entropy_coef = 0.1
             self.device = 'cpu'
+            self.use_pretrained_model = False
+            self.test_time = False
 
         self.params = {'vector_size': self.vector_size,
                        'hidden_size': self.hidden_size,
                        'output_size': self.output_size,
                        'gamma': self.gamma,
-                       'self.learning_rate':  self.learning_rate,
+                       'actor_learning_rate':  self.act_lr,
+                       'critic_learning_rate': self.critic_lr,
                        'batch_size': self.batch_size,
                        'max_nb_steps_per_episode': self.max_nb_steps_per_episode,
                        'entropy_coef': self.entropy_coef,
                        'self.device': self.device
         }
 
-        with open("../../vocab.txt", 'r') as file:
+        with open("/home/nik-96/Documents/git/TextWorld_Challenge/vocab.txt", 'r') as file:
             vocab = file.read().split('\n')
 
         print('[AGENT INFO] Loading word vectors')
@@ -63,7 +70,7 @@ class CustomAgent:
         # and for my work pc the path is /home/nik-96/Documents/datasets/glove/
         # with open("/media/nik/hdd-data/datasets/glove/glove.6B.{}d.txt".format(self.vector_size)) as file:
         # 19.05 see transform_word_vectors.py, where it's formed word_vectors file from vocab.txt file
-        with open('./fasttext_word_vectors.vec') as file:
+        with open('/home/nik-96/Documents/git/TextWorld_Challenge/agents/A2Cagent/fasttext_word_vectors.vec') as file:
             #                     word            :      vector
             self.wordVectors = {word_vector.split(' ')[0]: np.array(word_vector.split(' ')[1:], dtype='float')
                                 for word_vector in file.read().split('\n')}
@@ -76,12 +83,27 @@ class CustomAgent:
         self.StringVectors = {}
 
         # a simple model, TODO last 4 observations in obs model
-        self.obs_model = FCNetwork(self.vector_size, self.hidden_size, self.output_size, self.device).to(self.device)
-        self.act_model = FCNetwork(self.vector_size, self.hidden_size, self.output_size, self.device).to(self.device)
-        self.state_value_function = nn.Linear(self.output_size, 1)
+        # self.obs_model = FCNetwork(2*self.vector_size,
+        #                            2*self.hidden_size,
+        #                            self.output_size,
+        #                            self.device).to(self.device)
+        self.obs_hidden_state = (torch.autograd.Variable(torch.zeros(1, self.hidden_size)),
+                             torch.autograd.Variable(torch.zeros(1, self.hidden_size)))
+        self.obs_model = RNNNetwork(2*self.vector_size,
+                                    self.hidden_size,
+                                    self.output_size).to(self.device)
+        self.act_model = FCNetwork(self.vector_size,
+                                   self.hidden_size,
+                                   self.output_size).to(self.device)
+        self.state_value = nn.Linear(self.output_size, 1)
 
-        self.optimizer = torch.optim.Adam(list(self.obs_model.parameters()) + list(self.act_model.parameters()),
-                                          lr=self.learning_rate)
+        if self.use_pretrained_model and self.test_time:
+            self.load_pretrained_model('/home/nik-96/Documents/git/TextWorld_Challenge/agents/A2Cagent' +
+                                       '/models/0610_16:00_episode_100')
+
+        self.act_opt = torch.optim.Adam(self.act_model.parameters(), lr=self.act_lr)
+        self.critic_opt = torch.optim.Adam(list(self.state_value.parameters()) + list(self.obs_model.parameters()),
+                                           lr=self.critic_lr)
 
     def select_additional_infos(self) -> EnvInfos:
         """
@@ -126,12 +148,8 @@ class CustomAgent:
             * 'walkthrough'
         """
         request_infos = EnvInfos()
-        request_infos.description = True
         request_infos.has_won = True
         request_infos.has_lost = True
-        request_infos.inventory = True
-        request_infos.entities = True
-        request_infos.verbs = True
         request_infos.admissible_commands = True
         request_infos.extras = ["recipe"]
         return request_infos
@@ -144,10 +162,12 @@ class CustomAgent:
         print(f"\n[INFO] Loading model from {load_from}\n")
         try:
 
-            obs_state_dict = torch.load(load_from + '/obs_model.pt')
-            act_state_dict = torch.load(load_from + '/act_model.pt')
+            obs_state_dict = torch.load(load_from + '/obs_model.pt', map_location='cpu')
+            act_state_dict = torch.load(load_from + '/act_model.pt', map_location='cpu')
+            state_value_dict = torch.load(load_from + '/state_value.pt', map_location='cpu')
             self.obs_model.load_state_dict(obs_state_dict)
             self.act_model.load_state_dict(act_state_dict)
+            self.state_value.load_state_dict(state_value_dict)
         except:
             print("[INFO] Failed to load checkpoint...")
 
@@ -158,8 +178,9 @@ class CustomAgent:
         """
         print(f"\n[INFO] Saving model to {path(save_path) + '/'}")
         try:
-            torch.save(self.obs_model.state_dict(), save_path + f'/obs_model.pt')
-            torch.save(self.act_model.state_dict(), save_path + f'/act_model.pt')
+            torch.save(self.obs_model.state_dict(), save_path + '/obs_model.pt')
+            torch.save(self.act_model.state_dict(), save_path + '/act_model.pt')
+            torch.save(self.state_value.state_dict(), save_path + '/state_value.pt')
         except:
             print("[INFO] Failed to save checkpoint...")
 
@@ -189,18 +210,26 @@ class CustomAgent:
         :param recipe: string - recipe description
         :return: list of logits from networks, length of returned list equals to length of admissible_commands list
         """
-        # TODO: move prepared string to self.device
         prep_obs = self.prepare_string(state)
         prep_obs = prep_obs.reshape(-1).to(self.device)
-        obs_vector = self.obs_model(prep_obs)
-        recipe_vector = self.prepare_string(recipe).to(self.device)
+        self.recipe_vector = self.prepare_string(recipe).to(self.device)
+        observation = torch.cat([prep_obs, self.recipe_vector])[None, :]
+        obs_vector, self.obs_hidden_state = self.obs_model(observation, self.obs_hidden_state)  # (h_0, c_0)
         command_logits = torch.zeros(len(admissible_commands))
         for i, command in enumerate(admissible_commands):
             prep_command = self.prepare_string(command).to(self.device)
             action_vector = self.act_model(prep_command)
-            command_logits[i] = torch.dot(action_vector, obs_vector) + torch.dot(prep_command, recipe_vector)
+            command_logits[i] = torch.dot(action_vector, obs_vector)
 
         return command_logits
+
+    def eval(self):
+        """
+        Method for evaluation. It would be necessary to implement this method if
+        there will be any batch_norm / dropout layers in self.obs_model or self.act_model models.
+        :return:
+        """
+        pass
 
     def act(self, states, infos):
         """
@@ -233,24 +262,29 @@ class CustomAgent:
         :param actions_probs: Tensor on self.device
         :param
         """
-        batch_states = np.array([self.prepare_string(state) for state in batch_states], dtype=np.float64)
-        batch_states = torch.FloatTensor(batch_states).to(self.device)
-        batch_next_states = np.array([self.prepare_string(state) for state in batch_next_states], dtype=np.float64)
-        batch_next_states = torch.FloatTensor().to(self.device)
+        batch_states = torch.stack([self.prepare_string(state) for state in batch_states]).to(self.device)
+        # batch_next_states = np.array([self.prepare_string(state) for state in batch_next_states], dtype=np.float64)
+        batch_next_states = torch.stack([self.prepare_string(state) for state in batch_next_states]).to(self.device)
+        batch_rewards = torch.FloatTensor(batch_rewards)
         # critic loss
-        v_s = self.state_value_function(batch_states)
-        v_s_next = self.state_value_function(batch_next_states)
+        obs_vector_v_s, self.obs_hidden_state = self.obs_model(torch.cat([batch_states, self.recipe_vector[None, :]]),
+                                                               self.obs_hidden_state)
+        v_s = self.state_value(obs_vector_v_s)
+        obs_vector_v_s_next = self.obs_model(torch.cat([batch_next_states, self.recipe_vector[None, :]]),
+                                             self.obs_hidden_state)
+        v_s_next = self.state_value(obs_vector_v_s_next)
         target_v_s = batch_rewards + self.gamma*v_s_next
-        critic_loss = torch.mean((v_s - target_v_s.detach())**2)
+        self.critic_loss = torch.mean((v_s - target_v_s.detach())**2)
+        self.critic_loss.backward()
+        self.critic_opt.step()
+        self.critic_opt.zero_grad()
         # actor loss
         advantage = batch_rewards + self.gamma*v_s_next - v_s
         J = torch.mean(torch.log(actions_probs)*advantage.detach())
         H = -torch.mean(actions_probs*torch.log(actions_probs))
-        actor_loss = -J - self.entropy_coef*H
+        self.actor_loss = -J - self.entropy_coef*H
+        self.actor_loss.backward()
+        self.act_opt.step()
+        self.act_opt.zero_grad()
 
-        self.loss = actor_loss + critic_loss
-        self.loss.backward()
-        self.optimizer.step()
-        self.optimizer.zero_grad()
-
-        return J.cpu().data.numpy(), H.cpu().data.numpy(), critic_loss.cpu().data.numpy()
+        return J.cpu().data.numpy(), H.cpu().data.numpy(), self.critic_loss.cpu().data.numpy()

@@ -1,10 +1,14 @@
 training:
   vector_size: 300
-  hidden_size: 400
-  output_size: 100
-  gamma: 0.9
-  learning_rate: 1e-5
-  batch_size: 8
+  hidden_size: 500
+  output_size: 200
+  gamma: 0.999
+  actor_learning_rate: 1e-6
+  critic_learning_rate: 1e-5
+  batch_size: 4
   max_nb_steps_per_episode: 50
-  entropy_coefficient: 0.01
+  entropy_coefficient: 0.001
   device: cpu
+testing:
+  test_time: False
+  use_pretrained_model: True
