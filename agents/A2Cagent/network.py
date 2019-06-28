@@ -26,8 +26,8 @@ class RNNNetwork(nn.Module):
     def forward(self, x, hid_state):
         h, c = self.rnn(x, hid_state)
         x = F.relu(h)
-        x = self.dense1(h)
+        x = self.dense1(x)
 
-        return x[0], (h, c)
+        return x, (h, c)
 
 

@@ -82,13 +82,15 @@ class CustomAgent:
         self.trans_table = str.maketrans('\n', ' ', String.punctuation)
         self.StringVectors = {}
 
+        self.recipe_batch = None
+
         # a simple model, TODO last 4 observations in obs model
         # self.obs_model = FCNetwork(2*self.vector_size,
         #                            2*self.hidden_size,
         #                            self.output_size,
         #                            self.device).to(self.device)
-        self.obs_hidden_state = (torch.autograd.Variable(torch.zeros(1, self.hidden_size)),
-                             torch.autograd.Variable(torch.zeros(1, self.hidden_size)))
+        self.obs_hidden_state = (torch.autograd.Variable(torch.zeros(self.batch_size, self.hidden_size)),
+                                 torch.autograd.Variable(torch.zeros(self.batch_size, self.hidden_size)))
         self.obs_model = RNNNetwork(2*self.vector_size,
                                     self.hidden_size,
                                     self.output_size).to(self.device)
@@ -202,7 +204,7 @@ class CustomAgent:
 
         return torch.FloatTensor(string_vector)
 
-    def get_logits(self, state, admissible_commands, recipe):
+    def get_logits(self, states, admissible_commands, recipes):
         """
         Getting logits from two neural networks
         :param state: string - observation from environment
@@ -210,16 +212,26 @@ class CustomAgent:
         :param recipe: string - recipe description
         :return: list of logits from networks, length of returned list equals to length of admissible_commands list
         """
-        prep_obs = self.prepare_string(state)
-        prep_obs = prep_obs.reshape(-1).to(self.device)
-        self.recipe_vector = self.prepare_string(recipe).to(self.device)
-        observation = torch.cat([prep_obs, self.recipe_vector])[None, :]
+        prep_obs = torch.stack([self.prepare_string(state) for state in states]).to(self.device)
+        print("prep_obs shape", prep_obs.shape)
+        self.recipe_vectors = torch.stack([self.prepare_string(recipe).to(self.device) for recipe in recipes])
+        print("recipe vectors shape", self.recipe_vectors.shape)
+        print("concat shape", torch.cat([prep_obs, self.recipe_vectors]).shape)
+        observation = torch.cat([prep_obs, self.recipe_vectors], dim=1)
+        print("observation shape", observation.shape)
         obs_vector, self.obs_hidden_state = self.obs_model(observation, self.obs_hidden_state)  # (h_0, c_0)
-        command_logits = torch.zeros(len(admissible_commands))
-        for i, command in enumerate(admissible_commands):
-            prep_command = self.prepare_string(command).to(self.device)
-            action_vector = self.act_model(prep_command)
-            command_logits[i] = torch.dot(action_vector, obs_vector)
+        print("obs vector shape", obs_vector.shape)
+        maxlen = max([len(item) for item in admissible_commands])
+        command_logits = torch.zeros(len(admissible_commands), maxlen)
+        for i, commands in enumerate(admissible_commands):
+            prep_commands = torch.stack([self.prepare_string(command) for command in commands]).to(self.device)
+            print("prep_command shape", prep_commands.shape)
+            action_vector = self.act_model(prep_commands)
+            print("action vector shape", action_vector.shape)
+            # shapes of action_vector and obs_vector: [max(amount_of_actions), output_size], [output_size, batch_size]
+            logit = torch.mean(torch.chain_matmul(action_vector, obs_vector.transpose(1, 0)), dim=1)
+            command_logits[i] = torch.cat([logit, (-np.inf)*torch.ones(maxlen - logit.shape[0])]) if logit.shape[0] < maxlen \
+                                                                                         else logit
 
         return command_logits
 
@@ -240,6 +252,7 @@ class CustomAgent:
         :param infos: environment additional information
         :return: actions - list of str - actions to play,
         """
+        '''
         actions = []
         taken_action_probs = []
         for env in range(len(states)):
@@ -253,8 +266,23 @@ class CustomAgent:
             taken_action_prob = torch.dot(command_probs, one_hot_action)
             actions.append(action)
             taken_action_probs.append(taken_action_prob)
-
+        
         return actions, torch.stack(taken_action_probs).to(self.device)
+        '''
+        admissible_commands = infos["admissible_commands"]  # list with the length of batch_size
+        # command_logits.shape = (batch_size, max of admissible commands)
+        command_logits = self.get_logits(states, admissible_commands, infos["extra.recipe"])
+        command_probs = F.softmax(command_logits, dim=1)
+        actions = [np.random.choice(admissible_commands[env],
+                                    p=command_probs[env].cpu().data.numpy()[:len(admissible_commands[env])])
+                   for env in range(self.batch_size)]
+        one_hot_actions = torch.zeros(self.batch_size, command_probs.shape[1])
+        for i in range(self.batch_size):
+            j = admissible_commands[i].index(actions[i])
+            one_hot_actions[i][j] = 1
+        taken_actions_probs = torch.sum(command_probs*one_hot_actions, dim=1)
+
+        return actions, taken_actions_probs
 
     def update(self, actions_probs, batch_states, batch_next_states, batch_rewards):
         """
@@ -267,15 +295,15 @@ class CustomAgent:
         batch_next_states = torch.stack([self.prepare_string(state) for state in batch_next_states]).to(self.device)
         batch_rewards = torch.FloatTensor(batch_rewards)
         # critic loss
-        obs_vector_v_s, self.obs_hidden_state = self.obs_model(torch.cat([batch_states, self.recipe_vector[None, :]]),
+        obs_vector_v_s, self.obs_hidden_state = self.obs_model(torch.cat([batch_states, self.recipe_vectors], dim=1),
                                                                self.obs_hidden_state)
-        v_s = self.state_value(obs_vector_v_s)
-        obs_vector_v_s_next = self.obs_model(torch.cat([batch_next_states, self.recipe_vector[None, :]]),
-                                             self.obs_hidden_state)
-        v_s_next = self.state_value(obs_vector_v_s_next)
+        v_s = self.state_value(obs_vector_v_s).squeeze()
+        obs_vec_v_s_next, self.obs_hidden_state = self.obs_model(torch.cat([batch_next_states, self.recipe_vectors], dim=1),
+                                                                 self.obs_hidden_state)
+        v_s_next = self.state_value(obs_vec_v_s_next).squeeze()
         target_v_s = batch_rewards + self.gamma*v_s_next
         self.critic_loss = torch.mean((v_s - target_v_s.detach())**2)
-        self.critic_loss.backward()
+        self.critic_loss.backward(retain_graph=True)
         self.critic_opt.step()
         self.critic_opt.zero_grad()
         # actor loss
