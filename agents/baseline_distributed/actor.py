@@ -1,3 +1,4 @@
+from collections import deque
 import json
 from pathlib import Path
 from random import random
@@ -16,6 +17,7 @@ import torch.multiprocessing as mp
 
 from agents.baseline_distributed.model import LSTM_DQN
 from agents.baseline_distributed.utils.preprocess import preprocess, SEP_TOKEN, ITM_TOKEN
+from agents.baseline_distributed.utils.utils import SimpleTransition
 from agents.utils.eps_scheduler import LinearScheduler
 from agents.utils.generic import _words_to_ids, pad_sequences
 
@@ -58,6 +60,8 @@ class Actor(mp.Process):
         self.eps = eps
         self.eps_scheduler = LinearScheduler(self.config["exploration"])
 
+        self.replay_memory = deque(maxlen=50000)
+
         self.act_steps = 0
         self.episode_steps = 0
         self.num_episodes = 0
@@ -85,29 +89,45 @@ class Actor(mp.Process):
             for _ in tqdm(range(len(self.game_files))):
                 obs, infos = env.reset()
                 done, score = False, 0
+                prev_ids = None
                 while not done:
-                    action = self.act(obs, infos, score, done)
+                    descriptions, ids, admissible_commands = self.get_state(obs, infos)
+                    command_idx = self.act(*descriptions)
+                    action = admissible_commands[command_idx]
                     obs, score, done, infos = env.step(action)
+
+                    # Update local replay buffer
+                    if prev_ids is not None:
+                        transition = SimpleTransition(
+                            description_ids=prev_ids[0],
+                            command_ids=prev_ids[1],
+                            reward=score,
+                            done=done,
+                            next_description_ids=ids[0],
+                            next_command_ids=ids[1]
+                        )
+                        self.replay_memory.appendleft(transition)
+
+                    prev_ids = ids
                     steps += 1
-                    print(f"Action: {action}\nObs: {obs}")
                 stats["scores"].append(score)
                 stats["steps"].append(steps)
 
-    def act(self, obs: str, infos: Dict[str, List[Any]], score: int, done: bool) -> str:
-        # Get state and commands embeddings
+    def get_state(self, obs: str, infos: Dict[str, List[Any]]) -> Tuple[Tuple, Tuple, List]:
         admissible_commands = infos["admissible_commands"]
         state_description, state_ids = self.get_game_state_info(obs, infos)
         commands_description, commands_ids = self.get_commands_description(admissible_commands)
+        return (state_description, commands_description), (state_ids, commands_ids), admissible_commands
 
+    def act(self, state_description: torch.Tensor, commands_description: torch.Tensor) -> int:
         # Choose action
         if random() < self.eps:
-            chosen_command_idx = np.random.choice(len(admissible_commands))
+            chosen_command_idx = np.random.choice(commands_description.size(0))
         else:
             with torch.no_grad():
                 q_values = self.model(state_description.unsqueeze(0), [commands_description])[0]
                 chosen_command_idx = q_values.argmax().item()
-        action = admissible_commands[chosen_command_idx]
-        return action
+        return chosen_command_idx
 
     def get_game_state_info(self, obs: str, infos: Dict[str, Any]) -> Tuple[torch.Tensor, List]:
         description_tokens = preprocess(infos["description"], "description", tokenizer=self.nlp)

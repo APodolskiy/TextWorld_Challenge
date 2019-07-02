@@ -198,8 +198,6 @@ class CustomAgent:
         mask = torch.stack(batch.mask)
         loss = F.smooth_l1_loss(q_value * mask, rewards * mask)
 
-        #print(f"Q-values: {q_value.detach().cpu().numpy()[::8]}\nRewards: {rewards.cpu().numpy()[::8]}")
-
         return loss
 
     def compute_reward(self, obs: List[str], max_score: List[int]):
