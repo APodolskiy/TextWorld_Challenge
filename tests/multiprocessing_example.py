@@ -2,11 +2,13 @@ from collections import namedtuple
 from multiprocessing.managers import BaseManager
 import os
 import random
+import torch
 import torch.multiprocessing as mp
 import time
 from typing import NamedTuple
 
-Transition = namedtuple("Transition", ["val1", "val2"])
+
+Transition = namedtuple('Transition', ['val1', 'val2'])
 
 
 class ReplayMemory:
@@ -33,7 +35,7 @@ class ReplayMemory:
         return len(self.buffer)
 
 
-BaseManager.register("ReplayMemory", ReplayMemory)
+BaseManager.register('ReplayMemory', ReplayMemory)
 
 
 class Learner:
@@ -55,6 +57,7 @@ class Learner:
                 print(s[0], s[1])
             print("#" * 30)
             time.sleep(1)
+        self.shared_state["done"] = True
 
 
 class Actor(mp.Process):
@@ -65,30 +68,29 @@ class Actor(mp.Process):
 
     def run(self):
         for _ in range(10):
-            self.shared_memory.put([time.time(), os.getpid()])
+            self.shared_memory.put([os.getpid(), torch.rand(1)])
             time.sleep(0.5)
 
 
-def add_experience(shared_mem, replay_mem):
-    for i in range(50000):
-        print(i)
+def add_experience(shared_state, shared_mem, replay_mem):
+    while not shared_state["done"]:
         while shared_mem.qsize() or not shared_mem.empty():
             time, value = shared_mem.get()
             replay_mem.push(Transition(time, value))
-    print("Jopa!")
 
 
 if __name__ == "__main__":
     mp_manager = mp.Manager()
     shared_state = mp_manager.dict()
-    shared_mem = mp_manager.Queue()
+    shared_mem = mp_manager.Queue(maxsize=100_000)
+    shared_state["done"] = False
 
     replay_manager = BaseManager()
     replay_manager.start()
     replay_mem = replay_manager.ReplayMemory(100_000)
 
     learner = Learner(shared_state, replay_mem)
-    learner_process = mp.Process(target=learner.learn, args=(3,))
+    learner_process = mp.Process(target=learner.learn, args=(10,))
     learner_process.start()
 
     actor_processes = []
@@ -98,11 +100,10 @@ if __name__ == "__main__":
         actor_process.start()
         actor_processes.append(actor_process)
 
-    replay_mem_process = mp.Process(
-        target=add_experience, args=(shared_mem, replay_mem)
-    )
+    replay_mem_process = mp.Process(target=add_experience, args=(shared_state, shared_mem, replay_mem))
     replay_mem_process.start()
 
+    # Join started processes to end-up the program
     learner_process.join()
     [actor_process.join() for actor_process in actor_processes]
     replay_mem_process.join()

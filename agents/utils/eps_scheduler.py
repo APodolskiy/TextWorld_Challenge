@@ -34,9 +34,13 @@ class DeterministicEpsScheduler:
 class LinearScheduler:
     def __init__(self, config: Dict):
         self.init_eps = config.pop("init_eps", 1.0)
-        self.final_eps = config.pop("final_eps", 0.2)
-        self.steps = config.pop("steps", 1000)
+        self.final_eps = config.pop("final_eps", 0.025)
+        self.steps = config.pop("steps", 50000)
+        self.print_every = config.pop("print", 50)
         self.step = (self.init_eps - self.final_eps) / self.steps
 
     def __call__(self, current_step):
-        return max(self.final_eps, self.init_eps - self.step * current_step)
+        eps = max(self.final_eps, self.init_eps - self.step * current_step)
+        if self.print_every and current_step % self.print_every == 0:
+            print(f"Current eps: {eps}")
+        return eps
