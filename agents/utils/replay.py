@@ -320,6 +320,9 @@ class TernaryPrioritizeReplayMemory(AbstractReplayMemory):
             + len(self.secondary_buffer)
         )
 
+    def get_size(self) -> int:
+        return len(self)
+
     def get_len_prior(self) -> int:
         return len(self.pos_prior_buffer) + len(self.neg_prior_buffer)
 

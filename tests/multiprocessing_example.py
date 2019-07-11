@@ -103,6 +103,7 @@ if __name__ == "__main__":
     replay_mem_process = mp.Process(target=add_experience, args=(shared_state, shared_mem, replay_mem))
     replay_mem_process.start()
 
+    # Join started processes to end-up the program
     learner_process.join()
     [actor_process.join() for actor_process in actor_processes]
     replay_mem_process.join()

@@ -2,7 +2,7 @@ from collections import deque
 import json
 from pathlib import Path
 from random import random
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Optional
 
 from _jsonnet import evaluate_file
 import gym
@@ -25,14 +25,15 @@ from agents.utils.generic import _words_to_ids, pad_sequences
 class Actor(mp.Process):
     def __init__(self,
                  actor_id: int,
-                 eps,
-                 request_infos,
-                 game_files,
-                 config,
+                 eps: float,
+                 request_infos: EnvInfos,
+                 game_files: List,
+                 config: Dict,
                  shared_state,
-                 shared_replay_memory,
+                 shared_replay_memory: mp.Queue,
                  shared_writer):
         super(Actor, self).__init__()
+        print(f"Creating agent with id: {actor_id}")
         self.word_vocab = []
         self.word2id = {}
         self._load_vocab(vocab_file="./vocab.txt")
@@ -55,6 +56,7 @@ class Actor(mp.Process):
 
         self.model = LSTM_DQN(config=self.config["model"],
                               word_vocab_size=len(self.word_vocab) + 2)
+        self.model.load_state_dict(self.shared_state['model'])
         self.nlp = spacy.load('en', disable=['ner', 'parser', 'tagger'])
 
         self.eps = eps
@@ -67,26 +69,30 @@ class Actor(mp.Process):
         self.num_episodes = 0
         self.NUM_EPOCHS = 10000
 
+        self.SEND_PERIOD = 10
+
         self._episode_started = False
         self.previous_actions: List[str] = []
         self.scores: List[List[int]] = []
         self.dones: List[List[int]] = []
-        self.prev_description_id: List = None
-        self.prev_command: List = None
+        self.prev_description_id: Optional[List] = None
+        self.prev_command: Optional[List] = None
 
     def run(self):
         env_id = textworld.gym.register_games(self.game_files,
                                               self.request_infos,
-                                              max_episode_steps=200,
-                                              name='training')
+                                              max_episode_steps=100,
+                                              name=f'training_{self.id}')
         env = gym.make(env_id)
+        steps = 0
+        print(f"Start playing with agent: {self.id}")
         for epoch_no in range(self.NUM_EPOCHS):
             stats = {
                 "scores": [],
                 "steps": []
             }
-            steps = 0
-            for _ in tqdm(range(len(self.game_files))):
+            prev_command_idx = 0
+            for _ in range(len(self.game_files)):
                 obs, infos = env.reset()
                 done, score = False, 0
                 prev_ids = None
@@ -100,7 +106,7 @@ class Actor(mp.Process):
                     if prev_ids is not None:
                         transition = SimpleTransition(
                             description_ids=prev_ids[0],
-                            command_ids=prev_ids[1],
+                            command_ids=[prev_ids[1][prev_command_idx]],
                             reward=score,
                             done=done,
                             next_description_ids=ids[0],
@@ -108,10 +114,17 @@ class Actor(mp.Process):
                         )
                         self.replay_memory.appendleft(transition)
 
+                    if steps % self.SEND_PERIOD == 0 and steps != 0:
+                        for elem in self.replay_memory:
+                            self.shared_replay_memory.put(elem)
+                        self.replay_memory.clear()
+
                     prev_ids = ids
+                    prev_command_idx = command_idx
                     steps += 1
                 stats["scores"].append(score)
                 stats["steps"].append(steps)
+        print(f"End of running agent {self.id}")
 
     def get_state(self, obs: str, infos: Dict[str, List[Any]]) -> Tuple[Tuple, Tuple, List]:
         admissible_commands = infos["admissible_commands"]
